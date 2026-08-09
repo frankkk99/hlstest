@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { inspect } from "node:util";
 import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
+import puppeteer, { type Page } from "puppeteer-core";
+import { getServerlessChromiumExecutable } from "@/lib/serverless-chromium";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +71,56 @@ function extractApiLinks(html: string, pageUrl: string) {
   }
 
   return [...found];
+}
+
+async function extractDomApiLinks(page: Page, pageUrl: string) {
+  return page.evaluate((baseUrl: string) => {
+    const found = new Set<string>();
+    const urlPattern = /https?:\/\/[^\s"'<>]+|(?:^|["'`])\/?[^\s"'<>]+/gi;
+
+    function add(value: string | null) {
+      if (!value) return;
+      for (const candidate of value.match(urlPattern) || [value]) {
+        try {
+          const absolute = new URL(candidate.replace(/^["'`]/, ""), baseUrl);
+          const host = absolute.hostname.toLowerCase();
+          const looksApi =
+            /\bapi\b/i.test(value) ||
+            /[?&](?:api|key|token)=/i.test(absolute.search) ||
+            /\/api(?:[/?._-]|$)/i.test(absolute.pathname);
+          if (
+            looksApi &&
+            absolute.protocol === "https:" &&
+            (host === "avdbapi.com" || host === "www.avdbapi.com")
+          ) {
+            found.add(absolute.toString());
+          }
+        } catch {
+          // Ignore malformed DOM attributes.
+        }
+      }
+    }
+
+    for (const element of document.querySelectorAll("a,button,[data-api-url],[data-url],[data-href]")) {
+      const attributes = Array.from(element.attributes)
+        .map((attribute) => `${attribute.name}=${attribute.value}`)
+        .join(" ");
+      const text = element.textContent || "";
+      const source = `${text} ${attributes}`;
+
+      for (const attribute of Array.from(element.attributes)) {
+        if (
+          /url|href|link|onclick|api|data/i.test(attribute.name) ||
+          /\bapi\b/i.test(source) ||
+          /\/api(?:[/?._-]|$)/i.test(source)
+        ) {
+          add(attribute.value);
+        }
+      }
+    }
+
+    return [...found];
+  }, pageUrl);
 }
 
 function getPlayerUrl(item: any): string | null {
@@ -151,9 +203,12 @@ export async function POST(request: NextRequest) {
     const started = Date.now();
     chromium.setGraphicsMode = false;
 
+    const executablePath = await getServerlessChromiumExecutable();
+    const launchArgs = await puppeteer.defaultArgs({ args: chromium.args, headless: "shell" });
+
     browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      args: launchArgs,
+      executablePath,
       headless: "shell",
       defaultViewport: { width: 1440, height: 1000, deviceScaleFactor: 1 },
     });
@@ -191,10 +246,47 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const apiLinks = extractApiLinks(html, finalPageUrl).slice(0, 60);
+    const pageText = stripTags(html).toLowerCase();
+    const unavailable = /site unavailable|unable to access this site|service unavailable/.test(pageText);
+    if (unavailable) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "AVDB ต้นทางตอบหน้า Site Unavailable ไม่สามารถอ่านข้อมูลได้ในขณะนี้",
+          pageUrl,
+          finalPageUrl,
+          pageStatus,
+          title,
+          mode: "chromium",
+        },
+        { status: 502 },
+      );
+    }
+
+    const domApiLinks = await extractDomApiLinks(page, finalPageUrl).catch(() => [] as string[]);
+    const apiLinks = [...new Set([...domApiLinks, ...extractApiLinks(html, finalPageUrl)])]
+      .filter((url) => allowedAvdbUrl(url))
+      .slice(0, 60);
+
+    if (!apiLinks.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "ไม่พบลิงก์ API ในหน้านี้ ตรวจสอบว่าเป็นหน้า AVDB index ที่ถูกต้องหรือไม่",
+          pageUrl,
+          finalPageUrl,
+          pageStatus,
+          title,
+          mode: "chromium",
+          apiLinksFound: 0,
+        },
+        { status: 422 },
+      );
+    }
 
     const rawApiResults = await page.evaluate(async (urls) => {
       const results: Array<{
+        index: number;
         apiUrl: string;
         status: number;
         elapsedMs: number;
@@ -202,34 +294,48 @@ export async function POST(request: NextRequest) {
         error?: string;
       }> = [];
 
-      for (const apiUrl of urls) {
-        const startedAt = performance.now();
-        try {
-          const response = await fetch(apiUrl, {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-            headers: { Accept: "application/json,text/plain,*/*" },
-          });
-          const text = await response.text();
-          results.push({
-            apiUrl,
-            status: response.status,
-            elapsedMs: Math.round(performance.now() - startedAt),
-            text,
-          });
-        } catch (error) {
-          results.push({
-            apiUrl,
-            status: 0,
-            elapsedMs: Math.round(performance.now() - startedAt),
-            text: "",
-            error: error instanceof Error ? error.message : "Browser fetch failed",
-          });
+      let cursor = 0;
+      async function worker() {
+        while (cursor < urls.length) {
+          const index = cursor++;
+          const apiUrl = urls[index];
+          const startedAt = performance.now();
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 12000);
+
+          try {
+            const response = await fetch(apiUrl, {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
+              headers: { Accept: "application/json,text/plain,*/*" },
+              signal: controller.signal,
+            });
+            const text = await response.text();
+            results.push({
+              index,
+              apiUrl,
+              status: response.status,
+              elapsedMs: Math.round(performance.now() - startedAt),
+              text,
+            });
+          } catch (error) {
+            results.push({
+              index,
+              apiUrl,
+              status: 0,
+              elapsedMs: Math.round(performance.now() - startedAt),
+              text: "",
+              error: error instanceof Error ? error.message : "Browser fetch failed",
+            });
+          } finally {
+            window.clearTimeout(timeout);
+          }
         }
       }
 
-      return results;
+      await Promise.all(Array.from({ length: Math.min(6, urls.length) }, worker));
+      return results.sort((left, right) => left.index - right.index);
     }, apiLinks);
 
     const apiResults = rawApiResults.map((result) =>
@@ -268,10 +374,12 @@ export async function POST(request: NextRequest) {
       apiErrors: apiResults.filter((result: any) => !result?.item),
     });
   } catch (error) {
+    console.error("AVDB scan failed", error);
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "Chromium AVDB scan failed",
+        error: error instanceof Error ? error.message : inspect(error, { depth: 3, breakLength: Infinity }),
+        stage: "browser-or-avdb",
       },
       { status: 500 },
     );
