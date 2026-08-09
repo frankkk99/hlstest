@@ -58,6 +58,23 @@ type ProbeResult = {
   } | null;
 };
 
+type ResolveResult = {
+  ok: boolean;
+  error?: string | null;
+  playerUrl?: string;
+  finalPageUrl?: string;
+  title?: string;
+  navigationStatus?: number;
+  navigationError?: string | null;
+  redirectedToLogin?: boolean;
+  playAttempted?: boolean;
+  elapsedMs?: number;
+  manifestUrl?: string | null;
+  manifestKind?: string | null;
+  manifestStatus?: number | null;
+  manifestContentType?: string | null;
+};
+
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0";
 
@@ -75,12 +92,28 @@ function badge(ok: boolean | undefined, yes = "PASS", no = "FAIL") {
   return <span className={`badge ${ok ? "good" : "bad"}`}>{ok ? yes : no}</span>;
 }
 
+function isUpload18PlayerUrl(raw: string) {
+  try {
+    const parsed = new URL(raw);
+    const path = parsed.pathname.replace(/\/{2,}/g, "/");
+    return (
+      (parsed.hostname === "upload18.org" || parsed.hostname === "www.upload18.org") &&
+      /^\/play\/index\//i.test(path)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
+  const [sourcePlayerUrl, setSourcePlayerUrl] = useState("");
   const [origin, setOrigin] = useState("https://upload18.org");
   const [referer, setReferer] = useState("https://upload18.org/");
   const [userAgent, setUserAgent] = useState(DEFAULT_UA);
   const [loading, setLoading] = useState(false);
+  const [stageMessage, setStageMessage] = useState("");
+  const [resolveResult, setResolveResult] = useState<ResolveResult | null>(null);
   const [result, setResult] = useState<ProbeResult | null>(null);
   const [playerMessage, setPlayerMessage] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -106,11 +139,40 @@ export default function Home() {
     event?.preventDefault();
     setLoading(true);
     setPlayerMessage("");
+    setResult(null);
+    setResolveResult(null);
+    setSourcePlayerUrl("");
+
     try {
+      let targetUrl = url.trim();
+
+      if (isUpload18PlayerUrl(targetUrl)) {
+        const playerUrl = targetUrl;
+        setSourcePlayerUrl(playerUrl);
+        setStageMessage("1/2 กำลังเปิด Upload18 Player และหา Manifest จาก Network…");
+
+        const resolveResponse = await fetch("/api/resolve-player", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerUrl }),
+        });
+        const resolved = (await resolveResponse.json()) as ResolveResult;
+        setResolveResult(resolved);
+
+        if (!resolved.ok || !resolved.manifestUrl) {
+          setResult({ ok: false, error: resolved.error || "ไม่พบ Manifest จาก Upload18 Player" });
+          return;
+        }
+
+        targetUrl = resolved.manifestUrl;
+        setUrl(targetUrl);
+      }
+
+      setStageMessage("2/2 พบ Manifest แล้ว กำลังตรวจ HLS + Segment…");
       const response = await fetch("/api/probe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, origin, referer, userAgent, testSegment: true }),
+        body: JSON.stringify({ url: targetUrl, origin, referer, userAgent, testSegment: true }),
       });
       const data = (await response.json()) as ProbeResult;
       setResult(data);
@@ -118,6 +180,7 @@ export default function Home() {
       setResult({ ok: false, error: error instanceof Error ? error.message : "Request failed" });
     } finally {
       setLoading(false);
+      setStageMessage("");
     }
   }
 
@@ -160,27 +223,33 @@ export default function Home() {
 
   const manifest = result?.manifest;
   const segment = result?.segmentTest;
+  const resolvedFromPlayer = Boolean(sourcePlayerUrl || resolveResult?.playerUrl);
 
   return (
     <main className="shell">
       <section className="hero">
         <div>
           <p className="eyebrow">HLS DIAGNOSTIC LAB</p>
-          <h1>ตรวจ HLS แบบมี Origin / Referer</h1>
+          <h1>วาง Player URL หรือ Manifest แล้วทดสอบต่ออัตโนมัติ</h1>
           <p className="subtitle">
-            ตรวจ manifest, signed URL, CORS, expiry และ segment แรก โดยไม่ต้องเปิด DevTools ของเว็บต้นทาง
+            รองรับ Upload18 /play/index/... และ Manifest โดยตรง ถ้าเป็น Player URL ระบบจะเปิด browser session หา Manifest ก่อน แล้วส่งต่อเข้า HLS Test อัตโนมัติ
           </p>
         </div>
-        <div className="status-chip">Server-side probe</div>
+        <div className="status-chip">Auto resolve + probe</div>
       </section>
 
       <form className="panel form" onSubmit={probe}>
         <label className="field full">
-          <span>Manifest / Media URL</span>
+          <span>Manifest / Media / Upload18 Player URL</span>
           <textarea
             value={url}
-            onChange={(event) => setUrl(event.target.value.trim())}
-            placeholder="https://example.com/m/..."
+            onChange={(event) => {
+              setUrl(event.target.value.trim());
+              setResolveResult(null);
+              setSourcePlayerUrl("");
+              setResult(null);
+            }}
+            placeholder="https://upload18.org/play/index/bobb-373 หรือ https://helvid.com/m/..."
             rows={4}
             spellCheck={false}
           />
@@ -201,21 +270,93 @@ export default function Home() {
 
         <div className="actions full">
           <button className="primary" type="submit" disabled={!url || loading}>
-            {loading ? "กำลังทดสอบ…" : "ทดสอบ Manifest + Segment"}
+            {loading ? "กำลัง Resolve / Test…" : "Resolve + ทดสอบ HLS"}
           </button>
           <button
             className="secondary"
             type="button"
             onClick={() => {
               setUrl("");
+              setSourcePlayerUrl("");
+              setResolveResult(null);
               setResult(null);
               setPlayerMessage("");
+              setStageMessage("");
             }}
           >
             ล้างค่า
           </button>
         </div>
+
+        {stageMessage && <div className="notice full" style={{ margin: 0 }}>{stageMessage}</div>}
       </form>
+
+      {(resolvedFromPlayer || resolveResult) && (
+        <section className="panel diagnostics">
+          <div className="panel-title">
+            <div>
+              <p className="eyebrow">UPLOAD18 RESOLVER</p>
+              <h2>Player → Manifest</h2>
+            </div>
+            {resolveResult?.ok ? <span className="badge good">RESOLVED</span> : <span className="badge neutral">WAITING</span>}
+          </div>
+
+          <div className="summary-grid" style={{ margin: 0 }}>
+            <article className="metric">
+              <span>1. Player URL</span>
+              <strong>{badge(Boolean(sourcePlayerUrl || resolveResult?.playerUrl))}</strong>
+              <small>Upload18 /play/index/...</small>
+            </article>
+            <article className="metric">
+              <span>2. Open player</span>
+              <strong>{badge(Boolean(resolveResult && (resolveResult.navigationStatus || resolveResult.finalPageUrl)))}</strong>
+              <small>{resolveResult?.navigationStatus ? `HTTP ${resolveResult.navigationStatus}` : "Browser session"}</small>
+            </article>
+            <article className="metric">
+              <span>3. Find manifest</span>
+              <strong>{badge(Boolean(resolveResult?.manifestUrl))}</strong>
+              <small>{resolveResult?.manifestKind || "Network listener"}</small>
+            </article>
+            <article className="metric">
+              <span>4. HLS probe</span>
+              <strong>{result ? badge(Boolean(result.ok)) : <span className="badge neutral">WAIT</span>}</strong>
+              <small>{manifest ? `${manifest.status} ${manifest.statusText}` : "รอ Manifest"}</small>
+            </article>
+          </div>
+
+          {sourcePlayerUrl && (
+            <details>
+              <summary>Source Player URL</summary>
+              <code className="urlblock">{sourcePlayerUrl}</code>
+            </details>
+          )}
+
+          {resolveResult?.manifestUrl && (
+            <>
+              <details open>
+                <summary>Resolved Manifest</summary>
+                <code className="urlblock">{resolveResult.manifestUrl}</code>
+              </details>
+              <div className="actions" style={{ marginTop: 12 }}>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(resolveResult.manifestUrl || "")}
+                >
+                  คัดลอก Manifest
+                </button>
+              </div>
+            </>
+          )}
+
+          {resolveResult?.redirectedToLogin && (
+            <div className="alert badbox">Player ถูก redirect ไปหน้า login ใน browser session</div>
+          )}
+          {resolveResult?.navigationError && (
+            <div className="alert badbox">Navigation: {resolveResult.navigationError}</div>
+          )}
+        </section>
+      )}
 
       {result?.error && <div className="alert badbox">{result.error}</div>}
 
