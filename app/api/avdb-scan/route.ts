@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
 function allowedAvdbUrl(raw: string) {
   try {
@@ -37,7 +39,13 @@ function extractApiLinks(html: string, pageUrl: string) {
     const href = match[2];
     const text = stripTags(match[4]).toLowerCase();
     const attrs = `${match[1]} ${match[3]}`.toLowerCase();
-    const looksApi = text === "api" || text.startsWith("api ") || /\bapi\b/.test(attrs) || /\/api(?:[/?._-]|$)/i.test(href);
+    const looksApi =
+      text === "api" ||
+      text.startsWith("api ") ||
+      /\bapi\b/.test(attrs) ||
+      /\/api(?:[/?._-]|$)/i.test(href) ||
+      /[?&](?:api|key|token)=/i.test(href);
+
     if (!looksApi) continue;
 
     try {
@@ -48,9 +56,8 @@ function extractApiLinks(html: string, pageUrl: string) {
     }
   }
 
-  // Fallback for pages where the API URL is placed in JS/data attributes instead of anchor text.
   if (!found.size) {
-    const rawUrl = /(?:https?:\/\/avdbapi\.com)?\/[A-Za-z0-9_./?=&%-]*api[A-Za-z0-9_./?=&%-]*/gi;
+    const rawUrl = /(?:https?:\/\/(?:www\.)?avdbapi\.com)?\/[A-Za-z0-9_./?=&%-]*api[A-Za-z0-9_./?=&%-]*/gi;
     for (const value of html.match(rawUrl) || []) {
       try {
         const absolute = new URL(value, pageUrl).toString();
@@ -74,120 +81,169 @@ function getPlayerUrl(item: any): string | null {
   for (const value of Object.values(serverData) as any[]) {
     if (value?.link_embed && typeof value.link_embed === "string") return value.link_embed;
   }
+
   return null;
 }
 
-async function loadApi(apiUrl: string) {
-  const started = Date.now();
+function normalizeApiPayload(apiUrl: string, status: number, elapsedMs: number, text: string) {
+  let data: any;
   try {
-    const response = await fetch(apiUrl, {
-      headers: { "User-Agent": UA, Accept: "application/json,text/plain,*/*" },
-      redirect: "follow",
-      cache: "no-store",
-      signal: AbortSignal.timeout(12000),
-    });
-
-    const text = await response.text();
-    let data: any;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      return {
-        apiUrl,
-        ok: false,
-        status: response.status,
-        elapsedMs: Date.now() - started,
-        error: "API response is not JSON",
-      };
-    }
-
-    const rows = Array.isArray(data?.list) ? data.list : data ? [data] : [];
-    const item = rows[0];
-    if (!item) {
-      return {
-        apiUrl,
-        ok: false,
-        status: response.status,
-        elapsedMs: Date.now() - started,
-        error: "API returned no item",
-      };
-    }
-
-    return {
-      apiUrl,
-      ok: response.ok,
-      status: response.status,
-      elapsedMs: Date.now() - started,
-      item: {
-        id: item.id ?? null,
-        name: item.name ?? "",
-        slug: item.slug ?? "",
-        movieCode: item.movie_code ?? item.slug ?? "",
-        typeName: item.type_name ?? "",
-        year: item.year ?? "",
-        quality: item.quality ?? "",
-        duration: item.time ?? "",
-        posterUrl: item.poster_url ?? "",
-        thumbUrl: item.thumb_url ?? "",
-        playerUrl: getPlayerUrl(item),
-      },
-    };
-  } catch (error) {
+    data = JSON.parse(text);
+  } catch {
     return {
       apiUrl,
       ok: false,
-      status: 0,
-      elapsedMs: Date.now() - started,
-      error: error instanceof Error ? error.message : "API request failed",
+      status,
+      elapsedMs,
+      error: "API response is not JSON",
+      preview: text.slice(0, 240),
     };
   }
-}
 
-async function mapConcurrent<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>) {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
+  const rows = Array.isArray(data?.list) ? data.list : data ? [data] : [];
+  const item = rows[0];
 
-  async function worker() {
-    while (true) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      results[index] = await fn(items[index]);
-    }
+  if (!item) {
+    return {
+      apiUrl,
+      ok: false,
+      status,
+      elapsedMs,
+      error: "API returned no item",
+    };
   }
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return results;
+  return {
+    apiUrl,
+    ok: status >= 200 && status < 300,
+    status,
+    elapsedMs,
+    item: {
+      id: item.id ?? null,
+      name: item.name ?? "",
+      slug: item.slug ?? "",
+      movieCode: item.movie_code ?? item.slug ?? "",
+      typeName: item.type_name ?? "",
+      year: item.year ?? "",
+      quality: item.quality ?? "",
+      duration: item.time ?? "",
+      posterUrl: item.poster_url ?? "",
+      thumbUrl: item.thumb_url ?? "",
+      playerUrl: getPlayerUrl(item),
+    },
+  };
 }
 
 export async function POST(request: NextRequest) {
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+
   try {
     const body = await request.json();
     const pageUrl = String(body?.pageUrl || "").trim();
 
     if (!allowedAvdbUrl(pageUrl)) {
-      return NextResponse.json({ ok: false, error: "อนุญาตเฉพาะ URL บน avdbapi.com" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "อนุญาตเฉพาะ URL บน avdbapi.com" },
+        { status: 400 },
+      );
     }
 
     const started = Date.now();
-    const pageResponse = await fetch(pageUrl, {
-      headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" },
-      redirect: "follow",
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    });
-    const html = await pageResponse.text();
+    chromium.setGraphicsMode = false;
 
-    if (!pageResponse.ok) {
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: "shell",
+      defaultViewport: { width: 1440, height: 1000, deviceScaleFactor: 1 },
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent(UA);
+    await page.setExtraHTTPHeaders({
+      "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
+      "Upgrade-Insecure-Requests": "1",
+    });
+    page.setDefaultNavigationTimeout(25000);
+    page.setDefaultTimeout(10000);
+
+    const nav = await page.goto(pageUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 25000,
+    });
+
+    const pageStatus = nav?.status() ?? 0;
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+
+    const finalPageUrl = page.url();
+    const title = await page.title().catch(() => "");
+    const html = await page.content();
+
+    if (pageStatus >= 400) {
       return NextResponse.json({
         ok: false,
-        error: `AVDB page returned HTTP ${pageResponse.status}`,
+        error: `AVDB browser page returned HTTP ${pageStatus}`,
         pageUrl,
-        status: pageResponse.status,
+        finalPageUrl,
+        pageStatus,
+        title,
+        mode: "chromium",
       });
     }
 
-    const apiLinks = extractApiLinks(html, pageUrl).slice(0, 60);
-    const apiResults = await mapConcurrent(apiLinks, 6, loadApi);
+    const apiLinks = extractApiLinks(html, finalPageUrl).slice(0, 60);
+
+    const rawApiResults = await page.evaluate(async (urls) => {
+      const results: Array<{
+        apiUrl: string;
+        status: number;
+        elapsedMs: number;
+        text: string;
+        error?: string;
+      }> = [];
+
+      for (const apiUrl of urls) {
+        const startedAt = performance.now();
+        try {
+          const response = await fetch(apiUrl, {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+            headers: { Accept: "application/json,text/plain,*/*" },
+          });
+          const text = await response.text();
+          results.push({
+            apiUrl,
+            status: response.status,
+            elapsedMs: Math.round(performance.now() - startedAt),
+            text,
+          });
+        } catch (error) {
+          results.push({
+            apiUrl,
+            status: 0,
+            elapsedMs: Math.round(performance.now() - startedAt),
+            text: "",
+            error: error instanceof Error ? error.message : "Browser fetch failed",
+          });
+        }
+      }
+
+      return results;
+    }, apiLinks);
+
+    const apiResults = rawApiResults.map((result) =>
+      result.error
+        ? {
+            apiUrl: result.apiUrl,
+            ok: false,
+            status: result.status,
+            elapsedMs: result.elapsedMs,
+            error: result.error,
+          }
+        : normalizeApiPayload(result.apiUrl, result.status, result.elapsedMs, result.text),
+    );
+
     const items = apiResults
       .filter((result: any) => result?.item)
       .map((result: any, index) => ({
@@ -200,9 +256,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      mode: "chromium",
       pageUrl,
-      finalPageUrl: pageResponse.url,
-      pageStatus: pageResponse.status,
+      finalPageUrl,
+      pageStatus,
+      title,
       apiLinksFound: apiLinks.length,
       itemsFound: items.length,
       elapsedMs: Date.now() - started,
@@ -211,8 +269,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Scan failed" },
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Chromium AVDB scan failed",
+      },
       { status: 500 },
     );
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 }
