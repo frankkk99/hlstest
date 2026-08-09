@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ToolNav from "./components/ToolNav";
 
 export const metadata: Metadata = {
   title: "HLS Test Lab",
-  description: "Header-aware HLS manifest and segment diagnostics",
+  description: "AVDB import, HLS diagnostics and embed testing",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th">
-      <body>{children}</body>
+      <body>
+        <ToolNav />
+        {children}
+      </body>
     </html>
   );
 }
