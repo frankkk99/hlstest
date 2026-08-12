@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { PUBLIC_CURATED_CODES } from "@/lib/curated-catalog";
 import { isAdminRequest } from "@/lib/admin-api";
 import { fetchAdminCatalogPage, isCatalogConfigured, type AdminCatalogFilter } from "@/lib/hlshub-catalog";
 
@@ -19,10 +20,19 @@ export async function GET(request: NextRequest) {
   const sort = sortParam === "title" || sortParam === "release" ? sortParam : "latest";
   const activeParam = request.nextUrl.searchParams.get("active");
   const active = activeParam === "hidden" || activeParam === "all" ? activeParam : "active";
+  const scope = request.nextUrl.searchParams.get("scope") === "public-curated" ? "public-curated" : "all";
 
   try {
-    const result = await fetchAdminCatalogPage({ page, limit, search: request.nextUrl.searchParams.get("search") || "", sort, filter, active });
-    return NextResponse.json({ ok: true, page, limit, filter, active, ...result }, { headers: { "Cache-Control": "no-store" } });
+    const result = await fetchAdminCatalogPage({
+      page,
+      limit,
+      search: request.nextUrl.searchParams.get("search") || "",
+      sort,
+      filter,
+      active,
+      codes: scope === "public-curated" ? PUBLIC_CURATED_CODES : undefined,
+    });
+    return NextResponse.json({ ok: true, page, limit, filter, active, scope, ...result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "อ่าน catalog ไม่สำเร็จ" }, { status: 500 });
   }

@@ -21,7 +21,26 @@ type BrowserSessionState = {
   finalPageUrl: string;
   proxyUrl: string | null;
   expiresAt: number;
+  diagnostics: MediaDiagnostics;
 };
+
+type MediaDiagnostics = {
+  manifest: { url: string; status: number; contentType: string; bytes: number };
+  segment: { url: string; status: number; contentType: string; bytes: number };
+};
+
+type BrowserFailureType = "chromium" | "player";
+
+class BrowserSessionError extends Error {
+  constructor(
+    message: string,
+    readonly failureType: BrowserFailureType,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "BrowserSessionError";
+  }
+}
 
 // The browser page and its cookie jar must remain alive while HLS.js requests
 // the manifest and segments. A short-lived in-memory session is appropriate
@@ -31,6 +50,13 @@ const sessionByPageUrl = new Map<string, string>();
 type BrowserInstance = Awaited<ReturnType<typeof puppeteer.launch>>;
 let sharedBrowser: BrowserInstance | null = null;
 let sharedBrowserPromise: Promise<BrowserInstance> | null = null;
+let browserOperationQueue: Promise<unknown> = Promise.resolve();
+
+function enqueueBrowserOperation<T>(operation: () => Promise<T>) {
+  const result = browserOperationQueue.then(operation, operation);
+  browserOperationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
 
 async function getBrowser() {
   if (sharedBrowser && sharedBrowser.connected) return sharedBrowser;
@@ -153,6 +179,88 @@ async function waitForMedia(page: Page, timeoutMs: number) {
   }
 }
 
+async function inspectManifestAndFirstSegment(page: Page, manifestUrl: string) {
+  return page.evaluate(async (rootUrl) => {
+    type Check = { url: string; status: number; contentType: string; bytes: number };
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 18000);
+
+    try {
+      async function fetchText(url: string) {
+        const response = await fetch(url, { credentials: "include", cache: "no-store", signal: controller.signal });
+        const body = await response.text();
+        return {
+          response,
+          body,
+          check: { url, status: response.status, contentType: response.headers.get("content-type") || "", bytes: body.length },
+        };
+      }
+
+      function firstMediaUrl(body: string, baseUrl: string) {
+        const map = body.match(/#EXT-X-MAP:[^\n]*URI="([^"]+)"/i)?.[1];
+        if (map) return new URL(map, baseUrl).toString();
+        const line = body
+          .split(/\r?\n/)
+          .map((value) => value.trim())
+          .find((value) => value && !value.startsWith("#"));
+        return line ? new URL(line, baseUrl).toString() : null;
+      }
+
+      const root = await fetchText(rootUrl);
+      if (!root.response.ok || !/m3u8|mpegurl/i.test(root.check.contentType) && !/\.m3u8(?:$|\?)/i.test(rootUrl)) {
+        return { ok: false as const, stage: "manifest" as const, error: `Manifest HTTP ${root.response.status}` , manifest: root.check };
+      }
+
+      let playlistUrl = rootUrl;
+      let playlistBody = root.body;
+      let segmentUrl = firstMediaUrl(playlistBody, playlistUrl);
+      for (let depth = 0; segmentUrl && /\.m3u8(?:$|\?)/i.test(segmentUrl) && depth < 3; depth += 1) {
+        const child = await fetchText(segmentUrl);
+        if (!child.response.ok) {
+          return { ok: false as const, stage: "manifest" as const, error: `Variant manifest HTTP ${child.response.status}`, manifest: child.check };
+        }
+        playlistUrl = segmentUrl;
+        playlistBody = child.body;
+        segmentUrl = firstMediaUrl(playlistBody, playlistUrl);
+      }
+
+      if (!segmentUrl) {
+        return { ok: false as const, stage: "segment" as const, error: "ไม่พบ URI ของ segment แรกใน manifest", manifest: root.check };
+      }
+
+      const segmentResponse = await fetch(segmentUrl, {
+        credentials: "include",
+        cache: "no-store",
+        headers: { Range: "bytes=0-65535" },
+        signal: controller.signal,
+      });
+      const segmentBytes = new Uint8Array(await segmentResponse.arrayBuffer());
+      const segmentContentType = segmentResponse.headers.get("content-type") || "";
+      const sample = new TextDecoder().decode(segmentBytes.subarray(0, 64)).trim().toLowerCase();
+      const looksLikeHtml = /text\/html/i.test(segmentContentType) || sample.startsWith("<!doctype") || sample.startsWith("<html");
+      const segment: Check = { url: segmentUrl, status: segmentResponse.status, contentType: segmentContentType, bytes: segmentBytes.byteLength };
+      if (!segmentResponse.ok || !segmentBytes.byteLength || looksLikeHtml) {
+        return { ok: false as const, stage: "segment" as const, error: `Segment แรก HTTP ${segmentResponse.status} หรือไม่มีข้อมูลวิดีโอ`, manifest: root.check, segment };
+      }
+
+      return { ok: true as const, manifest: root.check, segment };
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }, manifestUrl).catch((error) => {
+    throw new BrowserSessionError(
+      error instanceof Error ? error.message : "ตรวจ manifest/segment ไม่สำเร็จ",
+      "chromium",
+      true,
+    );
+  });
+}
+
+function isRetryableBrowserError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /detached|target closed|browser.*(?:closed|disconnected)|insufficient[_ ]resources|execution context was destroyed|protocol error|frame was detached|navigation.*failed/i.test(message);
+}
+
 async function cleanupExpiredSessions() {
   const now = Date.now();
   for (const [id, session] of sessions) {
@@ -173,50 +281,46 @@ function sessionPayload(id: string, session: BrowserSessionState) {
     referer: session.finalPageUrl,
     origin: new URL(session.finalPageUrl).origin,
     expiresAt: session.expiresAt,
+    diagnostics: session.diagnostics,
   };
 }
 
-export async function POST(request: NextRequest) {
+async function createBrowserSession(body: { pageUrl: string; userAgent: string; mediaHint: string; forceFresh: boolean }) {
+  await cleanupExpiredSessions();
+  const { pageUrl, userAgent, mediaHint, forceFresh } = body;
+
+  if (!isAllowedSourcePage(pageUrl)) {
+    return NextResponse.json(
+      { ok: false, error: "URL หน้าเว็บไม่อยู่ใน source page allowlist", failureType: "player" as const },
+      { status: 400 },
+    );
+  }
+
+  const cachedId = sessionByPageUrl.get(pageUrl);
+  const cached = cachedId ? sessions.get(cachedId) : undefined;
+  if (!forceFresh && cached && cached.expiresAt > Date.now() && !cached.page.isClosed()) {
+    cached.expiresAt = Date.now() + 10 * 60 * 1000;
+    return NextResponse.json({ ok: true, session: sessionPayload(cachedId!, cached) });
+  }
+  if (forceFresh && cached) {
+    sessions.delete(cachedId!);
+    if (sessionByPageUrl.get(pageUrl) === cachedId) sessionByPageUrl.delete(pageUrl);
+    await cached.page.close().catch(() => undefined);
+  }
+
+  const browser = await getBrowser();
   let page: Page | null = null;
   let storedSession = false;
 
   try {
-    await cleanupExpiredSessions();
-    const body = await request.json();
-    const pageUrl = String(body?.pageUrl || "").trim();
-    const userAgent = String(body?.userAgent || DEFAULT_UA);
-    const mediaHint = String(body?.mediaUrl || "").trim();
-    const forceFresh = body?.forceFresh === true;
-
-    if (!isAllowedSourcePage(pageUrl)) {
-      return NextResponse.json(
-        { ok: false, error: "URL หน้าเว็บไม่อยู่ใน source page allowlist" },
-        { status: 400 },
-      );
-    }
-
-    const cachedId = sessionByPageUrl.get(pageUrl);
-    const cached = cachedId ? sessions.get(cachedId) : undefined;
-    if (!forceFresh && cached && cached.expiresAt > Date.now() && !cached.page.isClosed()) {
-      cached.expiresAt = Date.now() + 10 * 60 * 1000;
-      return NextResponse.json({ ok: true, session: sessionPayload(cachedId!, cached) });
-    }
-    if (forceFresh && cached) {
-      sessions.delete(cachedId!);
-      if (sessionByPageUrl.get(pageUrl) === cachedId) sessionByPageUrl.delete(pageUrl);
-      await cached.page.close().catch(() => undefined);
-    }
-
-    const browser = await getBrowser();
-
     page = await browser.newPage();
     await page.setUserAgent(userAgent);
     await page.setExtraHTTPHeaders({
       "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
       "Upgrade-Insecure-Requests": "1",
     });
-    page.setDefaultNavigationTimeout(25000);
-    page.setDefaultTimeout(10000);
+    page.setDefaultNavigationTimeout(30000);
+    page.setDefaultTimeout(12000);
 
     const captured = new Map<string, { url: string; status: number; contentType: string }>();
     page.on("response", (response) => {
@@ -229,34 +333,53 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const navigation = await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
-    await new Promise((resolve) => setTimeout(resolve, mediaHint && isManifestUrl(mediaHint) ? 650 : 900));
+    const navigation = await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await new Promise((resolve) => setTimeout(resolve, mediaHint && isManifestUrl(mediaHint) ? 1000 : 1500));
     await page.evaluate(() => {
       const video = document.querySelector("video") as HTMLVideoElement | null;
-      if (video) void video.play().catch(() => undefined);
-    }).catch(() => undefined);
-    const hintIsValid = mediaHint && isManifestUrl(mediaHint);
-    if (!hintIsValid) await waitForMedia(page, 4500);
+      if (video) {
+        video.muted = true;
+        void video.play().catch(() => undefined);
+      }
+    }).catch((error) => {
+      if (isRetryableBrowserError(error)) throw error;
+    });
+
+    const hintIsValid = Boolean(mediaHint && isManifestUrl(mediaHint));
+    if (!hintIsValid) await waitForMedia(page, 12000);
 
     const finalPageUrl = page.url();
     const media = [...captured.values()].filter((item) => item.status < 400);
-    const manifest = media[0] || (hintIsValid ? { url: mediaHint, status: 200, contentType: "application/vnd.apple.mpegurl" } : null);
-    if (!manifest) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Chromium เปิดหน้าเว็บแล้ว แต่ยังไม่พบ HLS manifest ที่ตอบสำเร็จ",
-          pageStatus: navigation?.status() ?? 0,
-          finalPageUrl,
-          captured: [...captured.values()].slice(0, 10),
-        },
-        { status: 502 },
+    const candidates = [
+      ...(hintIsValid ? [{ url: mediaHint, status: 200, contentType: "application/vnd.apple.mpegurl" }] : []),
+      ...media,
+    ].filter((candidate, index, list) => list.findIndex((item) => item.url === candidate.url) === index);
+
+    let manifest: { url: string; status: number; contentType: string } | null = null;
+    let diagnostics: MediaDiagnostics | null = null;
+    const failures: string[] = [];
+    for (const candidate of candidates) {
+      const check = await inspectManifestAndFirstSegment(page, candidate.url);
+      if (check.ok) {
+        manifest = candidate;
+        diagnostics = check;
+        break;
+      }
+      failures.push(`${candidate.url}: ${check.error}`);
+    }
+
+    if (!manifest || !diagnostics) {
+      throw new BrowserSessionError(
+        candidates.length
+          ? `ตรวจ Player ไม่ผ่าน: manifest หรือ segment แรกใช้ไม่ได้${failures.length ? ` (${failures[0]})` : ""}`
+          : "ไม่พบ HLS manifest หลังรอ Chromium 12 วินาที",
+        "player",
+        false,
       );
     }
 
     const cookie = await page.cookies(manifest.url).then((items) => items.map((item) => `${item.name}=${item.value}`).join("; ")).catch(() => "");
     const sessionId = randomUUID();
-    const finalSessionUrl = finalPageUrl;
     const expiresAt = Date.now() + 10 * 60 * 1000;
     const proxyUrl = (() => {
       try {
@@ -275,11 +398,12 @@ export async function POST(request: NextRequest) {
     })();
     sessions.set(sessionId, {
       browser,
-      page: page!,
+      page,
       mediaUrl: manifest.url,
-      finalPageUrl: finalSessionUrl,
+      finalPageUrl,
       proxyUrl,
       expiresAt,
+      diagnostics,
     });
     sessionByPageUrl.set(pageUrl, sessionId);
     storedSession = true;
@@ -287,20 +411,62 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       sessionId,
-      session: {
-        ...sessionPayload(sessionId, sessions.get(sessionId)!),
-      },
+      session: sessionPayload(sessionId, sessions.get(sessionId)!),
       pageStatus: navigation?.status() ?? 0,
       finalPageUrl,
       captured: media.slice(0, 10),
     });
-  } catch (error) {
-    return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Browser session failed" },
-      { status: 502 },
-    );
   } finally {
     if (!storedSession) await page?.close().catch(() => undefined);
+  }
+}
+
+async function handleBrowserSession(request: NextRequest) {
+  const body = await request.json();
+  const payload = {
+    pageUrl: String(body?.pageUrl || "").trim(),
+    userAgent: String(body?.userAgent || DEFAULT_UA),
+    mediaHint: String(body?.mediaUrl || "").trim(),
+    forceFresh: body?.forceFresh === true,
+  };
+
+  let lastError: unknown = new Error("Browser session failed");
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await createBrowserSession(payload);
+    } catch (error) {
+      lastError = error;
+      const retryable = error instanceof BrowserSessionError ? error.retryable : isRetryableBrowserError(error);
+      if (!retryable || attempt >= 3) {
+        const failureType: BrowserFailureType = error instanceof BrowserSessionError ? error.failureType : "chromium";
+        return NextResponse.json(
+          {
+            ok: false,
+            error: error instanceof Error ? error.message : "Browser session failed",
+            failureType,
+            attempts: attempt,
+          },
+          { status: 502 },
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, attempt * 900));
+    }
+  }
+
+  return NextResponse.json(
+    { ok: false, error: lastError instanceof Error ? lastError.message : "Browser session failed", failureType: "chromium" as const },
+    { status: 502 },
+  );
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    return await enqueueBrowserOperation(() => handleBrowserSession(request));
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Browser session failed", failureType: "chromium" as const },
+      { status: 502 },
+    );
   }
 }
 

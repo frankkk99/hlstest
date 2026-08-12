@@ -353,6 +353,7 @@ export async function fetchAdminCatalogPage(options: {
   sort?: "latest" | "release" | "title";
   filter?: AdminCatalogFilter;
   active?: "active" | "hidden" | "all";
+  codes?: readonly string[];
 }) {
   const db = getCatalogDb();
   if (!db) throw new Error("ยังไม่ได้ตั้งค่า HLSHUB_SUPABASE_SERVICE_ROLE_KEY");
@@ -366,6 +367,7 @@ export async function fetchAdminCatalogPage(options: {
       .neq("code", "articles")
       .neq("slug", "articles");
     if (activeMode !== "all") titlesQuery = titlesQuery.eq("is_active", activeMode === "active");
+    if (options.codes?.length) titlesQuery = titlesQuery.in("code", [...options.codes]);
     const titlesResponse = await titlesQuery.range(0, 9999);
     if (titlesResponse.error) throw new Error(titlesResponse.error.message);
     const titleIds = ((titlesResponse.data || []) as Array<{ id: number }>).map((row) => Number(row.id));
@@ -388,6 +390,7 @@ export async function fetchAdminCatalogPage(options: {
   if (activeMode !== "all") query = query.eq("is_active", activeMode === "active");
 
   if (filterIds) query = query.in("id", filterIds);
+  if (options.codes?.length) query = query.in("code", [...options.codes]);
 
   const search = options.search?.trim();
   if (search) {
@@ -406,7 +409,9 @@ export async function fetchAdminCatalogPage(options: {
   const titleResponse = await query.range(from, to);
   if (titleResponse.error) throw new Error(titleResponse.error.message);
   const titles = (titleResponse.data || []) as TitleRow[];
-  return { items: await fetchCatalogItemsForTitles(db, titles), total: titleResponse.count || 0 };
+  const items = await fetchCatalogItemsForTitles(db, titles);
+  if (options.codes?.length) items.sort((left, right) => publicCuratedOrder(left.code) - publicCuratedOrder(right.code));
+  return { items, total: titleResponse.count || 0 };
 }
 
 export async function fetchAdminCatalogOverview(): Promise<AdminCatalogOverview> {
