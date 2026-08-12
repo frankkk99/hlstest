@@ -1,6 +1,6 @@
 import net from "node:net";
 
-const DEFAULT_ALLOWED_HOSTS = ["helvid.com"];
+const DEFAULT_ALLOWED_HOSTS = ["helvid.com", "surrit.com", "fourhoi.com"];
 
 export function allowedHosts(): string[] {
   return (process.env.ALLOWED_HLS_HOSTS || DEFAULT_ALLOWED_HOSTS.join(","))
@@ -71,17 +71,31 @@ export function buildUpstreamHeaders(options: {
   origin?: string;
   referer?: string;
   userAgent?: string;
+  cookie?: string;
   range?: string | null;
 }): Headers {
   const headers = new Headers();
   headers.set("Accept", "*/*");
+  headers.set("Accept-Language", "en-US,en;q=0.9,th;q=0.8");
+  headers.set("Cache-Control", "no-cache");
+  headers.set("Pragma", "no-cache");
   headers.set("User-Agent", options.userAgent || defaultUserAgent());
+  headers.set("Sec-CH-UA", '"Chromium";v="151", "Microsoft Edge";v="151", "Not_A Brand";v="99"');
+  headers.set("Sec-CH-UA-Mobile", "?0");
+  headers.set("Sec-CH-UA-Platform", '"Windows"');
+  headers.set("Sec-Fetch-Dest", "empty");
+  headers.set("Sec-Fetch-Mode", "cors");
+  headers.set("Sec-Fetch-Site", "cross-site");
   if (options.origin) headers.set("Origin", options.origin);
   if (options.referer) headers.set("Referer", options.referer);
+  if (options.cookie) headers.set("Cookie", options.cookie);
   if (options.range) headers.set("Range", options.range);
   return headers;
 }
 
 export function proxyEnabled(): boolean {
-  return process.env.ENABLE_STREAM_PROXY === "true";
+  // The public Player Extractor must be able to play HLS sources whose CDN
+  // rejects browser-direct requests. The proxy is still limited by the
+  // HTTPS host allowlist above; set ENABLE_STREAM_PROXY=false to disable it.
+  return process.env.ENABLE_STREAM_PROXY !== "false";
 }

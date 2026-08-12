@@ -4,15 +4,24 @@ import {
   proxyEnabled,
   validateUpstreamUrl,
 } from "@/lib/security";
+import { createStreamToken, readStreamToken } from "@/lib/stream-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function proxiedUrl(target: string, origin: string, referer: string, userAgent: string) {
+function proxiedUrl(target: string, origin: string, referer: string, userAgent: string, cookie = "", expiresAt = Date.now() + 8 * 60 * 1000) {
+  try {
+    const token = createStreamToken({ url: target, origin, referer, userAgent, cookie, expiresAt });
+    return `/api/stream?token=${encodeURIComponent(token)}`;
+  } catch {
+    // Keep the older query-string path available for local diagnostics where
+    // no server secret is configured.
+  }
   const params = new URLSearchParams({ url: target });
   if (origin) params.set("origin", origin);
   if (referer) params.set("referer", referer);
   if (userAgent) params.set("ua", userAgent);
+  if (cookie) params.set("cookie", cookie);
   return `/api/stream?${params.toString()}`;
 }
 
@@ -22,6 +31,8 @@ function rewriteManifest(
   origin: string,
   referer: string,
   userAgent: string,
+  cookie: string,
+  expiresAt = Date.now() + 8 * 60 * 1000,
 ) {
   return text
     .split(/\r?\n/)
@@ -32,7 +43,7 @@ function rewriteManifest(
       if (!trimmed.startsWith("#")) {
         try {
           const absolute = new URL(trimmed, base).toString();
-          return proxiedUrl(absolute, origin, referer, userAgent);
+          return proxiedUrl(absolute, origin, referer, userAgent, cookie, expiresAt);
         } catch {
           return line;
         }
@@ -42,7 +53,7 @@ function rewriteManifest(
         return line.replace(/URI="([^"]+)"/g, (_match, value: string) => {
           try {
             const absolute = new URL(value, base).toString();
-            return `URI="${proxiedUrl(absolute, origin, referer, userAgent)}"`;
+            return `URI="${proxiedUrl(absolute, origin, referer, userAgent, cookie, expiresAt)}"`;
           } catch {
             return `URI="${value}"`;
           }
@@ -66,20 +77,24 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const raw = request.nextUrl.searchParams.get("url");
+    const token = request.nextUrl.searchParams.get("token") || "";
+    const tokenPayload = token ? readStreamToken(token) : null;
+    const raw = tokenPayload?.url || request.nextUrl.searchParams.get("url");
     if (!raw) {
       return NextResponse.json({ ok: false, error: "Missing url" }, { status: 400 });
     }
 
-    const origin = request.nextUrl.searchParams.get("origin") || "";
-    const referer = request.nextUrl.searchParams.get("referer") || "";
-    const userAgent = request.nextUrl.searchParams.get("ua") || "";
+    const origin = tokenPayload?.origin || request.nextUrl.searchParams.get("origin") || "";
+    const referer = tokenPayload?.referer || request.nextUrl.searchParams.get("referer") || "";
+    const userAgent = tokenPayload?.userAgent || request.nextUrl.searchParams.get("ua") || "";
+    const cookie = tokenPayload?.cookie || request.nextUrl.searchParams.get("cookie") || "";
     const target = validateUpstreamUrl(raw);
 
     const upstreamHeaders = buildUpstreamHeaders({
       origin,
       referer,
       userAgent,
+      cookie,
       range: request.headers.get("range"),
     });
 
@@ -96,7 +111,7 @@ export async function GET(request: NextRequest) {
         return new NextResponse(null, { status: upstream.status });
       }
       const redirected = validateUpstreamUrl(new URL(location, target).toString());
-      const next = proxiedUrl(redirected.toString(), origin, referer, userAgent);
+      const next = proxiedUrl(redirected.toString(), origin, referer, userAgent, cookie, tokenPayload?.expiresAt);
       return NextResponse.redirect(new URL(next, request.nextUrl.origin), 307);
     }
 
@@ -107,7 +122,7 @@ export async function GET(request: NextRequest) {
       const body = await upstream.text();
       const isManifest = body.trimStart().startsWith("#EXTM3U");
       if (isManifest) {
-        const rewritten = rewriteManifest(body, target, origin, referer, userAgent);
+        const rewritten = rewriteManifest(body, target, origin, referer, userAgent, cookie, tokenPayload?.expiresAt);
         return new NextResponse(rewritten, {
           status: upstream.status,
           headers: {

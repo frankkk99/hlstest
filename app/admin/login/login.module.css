@@ -1,0 +1,12 @@
+.page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #070b12; color: #f5f7fb; }
+.card { width: min(420px, 100%); border: 1px solid rgba(255,255,255,.12); border-radius: 20px; padding: 30px; background: #111b28; box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+.kicker { margin: 0 0 10px; color: #9ec4ff; font-size: 11px; font-weight: 900; letter-spacing: .16em; }
+.card h1 { margin: 0; font-size: 28px; letter-spacing: -.04em; }
+.description { margin: 12px 0 24px; color: #93a2b4; font-size: 13px; line-height: 1.6; }
+.label { display: block; margin-bottom: 7px; color: #cbd6e2; font-size: 12px; font-weight: 800; }
+.input { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 12px 13px; outline: 0; color: #fff; background: #08111c; }
+.input:focus { border-color: #6aa8ff; box-shadow: 0 0 0 3px rgba(106,168,255,.14); }
+.error { margin: 12px 0 0; color: #ff9cad; font-size: 12px; }
+.button { width: 100%; margin-top: 20px; border: 0; border-radius: 10px; padding: 12px 14px; color: #07111d; background: #9ec4ff; font-weight: 900; cursor: pointer; }
+.button:disabled { opacity: .6; cursor: wait; }
+.back { display: block; margin-top: 20px; color: #aab8c8; text-align: center; text-decoration: none; font-size: 12px; }
