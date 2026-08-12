@@ -1,25 +1,26 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import AdminShell from "./admin-shell";
+import styles from "./admin.module.css";
 
-const tools = [
-  ["/admin/hls-test", "HLS Test", "ตรวจ Manifest และ Segment"],
-  ["/admin/avdb-import-test", "AVDB Import", "ดึงข้อมูลจากหน้า AVDB"],
-  ["/admin/bulk-player-test", "Bulk Player Test", "ค้นหาและทดสอบหลายเรื่อง"],
-  ["/admin/player-extractor", "Player Extractor", "ตรวจแหล่ง HLS / MP4"],
-  ["/admin/embed-test", "Embed Test", "ทดสอบการครอบ Player"],
-] as const;
+type Overview = { configured: boolean; activeTitles: number; hiddenTitles: number; readyTitles: number; noPlayerTitles: number; brokenTitles: number; unknownTitles: number; movieTitles: number; seriesTitles: number; sourceCount: number; sourceStatus: Record<string, number>; lastCheckedAt: string };
+const emptyOverview: Overview = { configured: false, activeTitles: 0, hiddenTitles: 0, readyTitles: 0, noPlayerTitles: 0, brokenTitles: 0, unknownTitles: 0, movieTitles: 0, seriesTitles: 0, sourceCount: 0, sourceStatus: {}, lastCheckedAt: "" };
 
 export default function AdminPage() {
-  return <main style={{ minHeight: "100vh", padding: "48px 20px 90px", background: "#070b12", color: "#f5f7fb" }}>
-    <div style={{ width: "min(1120px, 100%)", margin: "0 auto" }}>
-      <header style={{ display: "flex", justifyContent: "space-between", gap: 20, alignItems: "end", marginBottom: 30 }}>
-        <div><p style={{ margin: 0, color: "#9ec4ff", fontSize: 11, fontWeight: 900, letterSpacing: ".16em" }}>HLSHUB CONTROL ROOM</p><h1 style={{ margin: "10px 0 0", fontSize: "clamp(30px, 5vw, 52px)", letterSpacing: "-.06em" }}>ระบบหลังบ้าน</h1><p style={{ color: "#93a2b4" }}>เลือกเครื่องมือที่ต้องการใช้งาน โดยระบบดึงข้อมูลเดิมยังทำงานเหมือนเดิม</p></div>
-        <div style={{ display: "flex", gap: 8 }}><Link href="/" style={{ color: "#dce8f7", textDecoration: "none" }}>หน้าเว็บ</Link><button type="button" onClick={async () => { await fetch("/api/admin/logout", { method: "POST" }); window.location.href = "/"; }} style={{ border: "1px solid rgba(255,255,255,.15)", borderRadius: 9, padding: "8px 11px", color: "#dce8f7", background: "rgba(255,255,255,.05)", cursor: "pointer" }}>ออกจากระบบ</button></div>
-      </header>
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14 }}>
-        {tools.map(([href, title, description]) => <Link key={href} href={href} style={{ minHeight: 150, display: "flex", flexDirection: "column", justifyContent: "space-between", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16, padding: 20, color: "#f5f7fb", background: "#111b28", textDecoration: "none" }}><span style={{ color: "#9ec4ff", fontSize: 12, fontWeight: 900 }}>เปิดเครื่องมือ ↗</span><span><strong style={{ display: "block", fontSize: 18 }}>{title}</strong><small style={{ display: "block", marginTop: 8, color: "#93a2b4", lineHeight: 1.5 }}>{description}</small></span></Link>)}
-      </section>
-    </div>
-  </main>;
+  const [overview, setOverview] = useState<Overview>(emptyOverview);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  async function load() { setLoading(true); setError(""); try { const response = await fetch("/api/admin/overview", { cache: "no-store" }); const data = await response.json() as { ok?: boolean; error?: string; overview?: Overview }; if (!response.ok || !data.ok || !data.overview) throw new Error(data.error || "อ่านข้อมูลภาพรวมไม่สำเร็จ"); setOverview(data.overview); } catch (loadError) { setError(loadError instanceof Error ? loadError.message : "อ่านข้อมูลภาพรวมไม่สำเร็จ"); } finally { setLoading(false); } }
+  useEffect(() => { void load(); }, []);
+  const readyPercent = useMemo(() => overview.activeTitles ? Math.round((overview.readyTitles / overview.activeTitles) * 100) : 0, [overview]);
+  const sourceTotal = Math.max(1, overview.sourceCount);
+  return <AdminShell title="ระบบหลังบ้าน" description="ศูนย์กลางดูสถานะรายการ, คัดกรองเรื่องที่พร้อมรับชม และเข้าถึงเครื่องมือเดิมโดยไม่เปลี่ยน flow ของเดิม">
+    {loading ? <div className={styles.loading}>กำลังอ่านสถานะจากฐานข้อมูล...</div> : error ? <div className={styles.error}>{error} <button className={styles.button} type="button" onClick={() => void load()}>ลองใหม่</button></div> : <>
+      <section className={styles.metricGrid}><article className={styles.metric}><span>รายการเปิดใช้งาน</span><strong>{overview.activeTitles.toLocaleString()}</strong><small>ที่อยู่ในระบบกลาง</small></article><article className={styles.metric}><span>พร้อมรับชม</span><strong className={styles.good}>{overview.readyTitles.toLocaleString()}</strong><small>{readyPercent}% ของรายการเปิดใช้งาน</small></article><article className={styles.metric}><span>ไม่มี Player พร้อมใช้</span><strong className={styles.warn}>{overview.noPlayerTitles.toLocaleString()}</strong><small>ไม่ถูกส่งไปหน้าเว็บ</small></article><article className={styles.metric}><span>Player มีปัญหา</span><strong className={styles.bad}>{overview.brokenTitles.toLocaleString()}</strong><small>blocked / error / expired</small></article><article className={styles.metric}><span>ถูกซ่อน</span><strong className={styles.blue}>{overview.hiddenTitles.toLocaleString()}</strong><small>ไม่แสดงใน catalog</small></article><article className={styles.metric}><span>Sources</span><strong>{overview.sourceCount.toLocaleString()}</strong><small>เฉพาะระดับเรื่อง</small></article></section>
+      <section className={styles.sectionGrid}><div className={styles.panel}><div className={styles.panelHeader}><div><h2>ทางลัดจัดการ</h2><p>เลือกหน้าที่ต้องการทำงานต่อได้ทันที</p></div><button className={styles.button} type="button" onClick={() => void load()}>รีเฟรช</button></div><div className={styles.linkGrid}><Link className={styles.actionCard} href="/admin/catalog"><strong>จัดการรายการหนัง</strong><span>ค้นหา กรองเรื่องที่ไม่มี Player และซ่อน/แสดงรายการ</span></Link><Link className={styles.actionCard} href="/admin/health"><strong>ตรวจ Player Health</strong><span>ดูสรุป PASS, blocked, error, expired และ unknown</span></Link><Link className={styles.actionCard} href="/admin/tools"><strong>เครื่องมือเดิม</strong><span>HLS Test, AVDB Import, Bulk Test, Extractor และ Embed Test</span></Link><Link className={styles.actionCard} href="/admin/system"><strong>ตรวจระบบ</strong><span>ดูสถานะการเชื่อมต่อและเส้นทางหน้าสาธารณะ</span></Link></div></div><div className={styles.panel}><div className={styles.panelHeader}><div><h2>สถานะ Source</h2><p>นับจาก player_sources ระดับเรื่อง</p></div></div><div className={styles.barList}>{[["pass", "PASS"], ["blocked", "BLOCKED"], ["error", "ERROR"], ["expired", "EXPIRED"], ["unknown", "UNKNOWN"]].map(([key, label]) => <div className={styles.barRow} key={key}><span>{label}</span><div className={styles.barTrack}><span style={{ width: `${Math.min(100, ((overview.sourceStatus[key] || 0) / sourceTotal) * 100)}%` }} /></div><strong>{overview.sourceStatus[key] || 0}</strong></div>)}</div></div></section>
+      <section className={styles.panel} style={{ marginTop: 14 }}><div className={styles.panelHeader}><div><h2>กติกาหน้าเว็บสาธารณะ</h2><p>ระบบจะส่งออกเฉพาะรายการที่มี source ผ่านและมีหน้า Player ต้นทางเท่านั้น</p></div><span className={`${styles.statusPill} ${styles.good}`}>ACTIVE</span></div><ul className={styles.list}><li><span>แสดงบน /hub, หนังทั้งหมด, ซีรีส์</span><strong>status = pass + player_page_url</strong></li><li><span>ไม่มี Player / Player ไม่ผ่าน</span><strong>ไม่แสดง</strong></li><li><span>รายการที่แอดมินซ่อน</span><strong>is_active = false</strong></li></ul></section>
+    </>}
+  </AdminShell>;
 }

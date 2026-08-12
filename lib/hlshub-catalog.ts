@@ -21,6 +21,7 @@ export type CatalogItem = {
   origin: string | null;
   referer: string | null;
   provider: string | null;
+  isActive: boolean;
   hasPlayer: boolean;
   sourceCount: number;
 };
@@ -37,6 +38,23 @@ export type CatalogDetail = CatalogItem & {
   terms: Array<{ name: string; type: string; url: string | null }>;
 };
 
+export type AdminCatalogFilter = "all" | "ready" | "no-player" | "broken" | "unknown";
+
+export type AdminCatalogOverview = {
+  configured: boolean;
+  activeTitles: number;
+  hiddenTitles: number;
+  readyTitles: number;
+  noPlayerTitles: number;
+  brokenTitles: number;
+  unknownTitles: number;
+  movieTitles: number;
+  seriesTitles: number;
+  sourceCount: number;
+  sourceStatus: Record<SourceRow["status"], number>;
+  lastCheckedAt: string;
+};
+
 type TitleRow = {
   id: number;
   canonical_url: string;
@@ -50,6 +68,7 @@ type TitleRow = {
   language: string | null;
   is_series: boolean;
   last_seen_at: string | null;
+  is_active: boolean;
 };
 
 type AssetRow = {
@@ -144,6 +163,77 @@ async function fetchPlayableTitleIds(db: CatalogDb) {
   return [...ids].filter(Number.isSafeInteger);
 }
 
+async function fetchAllTitleLevelSources(db: CatalogDb) {
+  const rows: SourceRow[] = [];
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const response = await db
+      .from("player_sources")
+      .select("id,title_id,source_type,provider,player_page_url,media_url,origin,referer,is_primary,status,last_seen_at")
+      .is("episode_id", null)
+      .range(from, from + pageSize - 1);
+
+    if (response.error) throw new Error(response.error.message);
+    const page = (response.data || []) as SourceRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  return rows;
+}
+
+function titleIdsForFilter(titleIds: number[], sources: SourceRow[], filter: AdminCatalogFilter) {
+  if (filter === "all") return null;
+
+  const byTitle = new Map<number, SourceRow[]>();
+  for (const source of sources) {
+    const current = byTitle.get(Number(source.title_id)) || [];
+    current.push(source);
+    byTitle.set(Number(source.title_id), current);
+  }
+
+  return titleIds.filter((id) => {
+    const titleSources = byTitle.get(id) || [];
+    const ready = titleSources.some(isPlayableSource);
+    if (filter === "ready") return ready;
+    if (filter === "no-player") return !ready;
+    if (filter === "unknown") return !ready && titleSources.some((source) => source.status === "unknown");
+    return !ready && titleSources.some((source) => ["blocked", "error", "expired"].includes(source.status));
+  });
+}
+
+async function fetchCatalogItemsForTitles(
+  db: CatalogDb,
+  titles: TitleRow[],
+): Promise<CatalogItem[]> {
+  const ids = titles.map((title) => title.id);
+  if (!ids.length) return [];
+
+  const [assetsResponse, sourcesResponse] = await Promise.all([
+    db.from("media_assets").select("title_id,kind,url,sort_order").in("title_id", ids).order("sort_order"),
+    db
+      .from("player_sources")
+      .select("id,title_id,source_type,provider,player_page_url,media_url,origin,referer,is_primary,status,last_seen_at")
+      .in("title_id", ids)
+      .is("episode_id", null)
+      .order("is_primary", { ascending: false }),
+  ]);
+
+  if (assetsResponse.error) throw new Error(assetsResponse.error.message);
+  if (sourcesResponse.error) throw new Error(sourcesResponse.error.message);
+
+  const assets = (assetsResponse.data || []) as AssetRow[];
+  const sources = (sourcesResponse.data || []) as SourceRow[];
+  return titles.map((title) =>
+    toCatalogItem(
+      title,
+      assets.filter((asset) => String(asset.title_id) === String(title.id)),
+      sources.filter((source) => String(source.title_id) === String(title.id)),
+    ),
+  );
+}
+
 function fallbackCoverUrl(title: TitleRow) {
   const slug = (title.slug || title.code || "").trim();
   if (!slug || slug.toLowerCase() === "articles") return null;
@@ -184,6 +274,7 @@ export function toCatalogItem(
     origin: source?.origin || null,
     referer: source?.referer || null,
     provider: source?.provider || null,
+    isActive: title.is_active,
     // A database row is not proof that the source can play. Only a passed
     // source should be advertised as ready to viewers.
     hasPlayer: sources.some(isPlayableSource),
@@ -211,7 +302,7 @@ export async function fetchCatalogPage(options: {
   let query = db
     .from("titles")
     .select(
-      "id,canonical_url,code,slug,title,original_title,synopsis,release_date,duration_seconds,language,is_series,last_seen_at",
+      "id,canonical_url,code,slug,title,original_title,synopsis,release_date,duration_seconds,language,is_series,last_seen_at,is_active",
       { count: "exact" },
     )
     .eq("is_active", true)
@@ -243,31 +334,127 @@ export async function fetchCatalogPage(options: {
     return { items: [] as CatalogItem[], total: titleResponse.count || 0 };
   }
 
-  const [assetsResponse, sourcesResponse] = await Promise.all([
-    db.from("media_assets").select("title_id,kind,url,sort_order").in("title_id", ids).order("sort_order"),
-    db
-      .from("player_sources")
-      .select("id,title_id,source_type,provider,player_page_url,media_url,origin,referer,is_primary,status,last_seen_at")
-      .in("title_id", ids)
-      .is("episode_id", null)
-      .order("is_primary", { ascending: false }),
+  return {
+    items: await fetchCatalogItemsForTitles(db, titles),
+    total: titleResponse.count || 0,
+  };
+}
+
+export async function fetchAdminCatalogPage(options: {
+  page: number;
+  limit: number;
+  search?: string;
+  sort?: "latest" | "release" | "title";
+  filter?: AdminCatalogFilter;
+  active?: "active" | "hidden" | "all";
+}) {
+  const db = getCatalogDb();
+  if (!db) throw new Error("ยังไม่ได้ตั้งค่า HLSHUB_SUPABASE_SERVICE_ROLE_KEY");
+
+  const activeMode = options.active || "active";
+  let filterIds: number[] | null = null;
+  if (options.filter && options.filter !== "all") {
+    let titlesQuery = db
+      .from("titles")
+      .select("id")
+      .neq("code", "articles")
+      .neq("slug", "articles");
+    if (activeMode !== "all") titlesQuery = titlesQuery.eq("is_active", activeMode === "active");
+    const titlesResponse = await titlesQuery.range(0, 9999);
+    if (titlesResponse.error) throw new Error(titlesResponse.error.message);
+    const titleIds = ((titlesResponse.data || []) as Array<{ id: number }>).map((row) => Number(row.id));
+    const sources = await fetchAllTitleLevelSources(db);
+    filterIds = titleIdsForFilter(titleIds, sources, options.filter) || [];
+    if (!filterIds.length) return { items: [] as CatalogItem[], total: 0 };
+  }
+
+  const from = Math.max(0, (options.page - 1) * options.limit);
+  const to = from + options.limit - 1;
+  let query = db
+    .from("titles")
+    .select(
+      "id,canonical_url,code,slug,title,original_title,synopsis,release_date,duration_seconds,language,is_series,last_seen_at,is_active",
+      { count: "exact" },
+    )
+    .neq("code", "articles")
+    .neq("slug", "articles");
+
+  if (activeMode !== "all") query = query.eq("is_active", activeMode === "active");
+
+  if (filterIds) query = query.in("id", filterIds);
+
+  const search = options.search?.trim();
+  if (search) {
+    const safe = search.replace(/[%,()]/g, " ").trim();
+    if (safe) query = query.or(`title.ilike.%${safe}%,code.ilike.%${safe}%,original_title.ilike.%${safe}%`);
+  }
+
+  if (options.sort === "title") {
+    query = query.order("title", { ascending: true, nullsFirst: false });
+  } else if (options.sort === "release") {
+    query = query.order("release_date", { ascending: false, nullsFirst: false });
+  } else {
+    query = query.order("last_seen_at", { ascending: false, nullsFirst: false });
+  }
+
+  const titleResponse = await query.range(from, to);
+  if (titleResponse.error) throw new Error(titleResponse.error.message);
+  const titles = (titleResponse.data || []) as TitleRow[];
+  return { items: await fetchCatalogItemsForTitles(db, titles), total: titleResponse.count || 0 };
+}
+
+export async function fetchAdminCatalogOverview(): Promise<AdminCatalogOverview> {
+  const db = getCatalogDb();
+  if (!db) {
+    return {
+      configured: false,
+      activeTitles: 0,
+      hiddenTitles: 0,
+      readyTitles: 0,
+      noPlayerTitles: 0,
+      brokenTitles: 0,
+      unknownTitles: 0,
+      movieTitles: 0,
+      seriesTitles: 0,
+      sourceCount: 0,
+      sourceStatus: { pass: 0, blocked: 0, error: 0, expired: 0, unknown: 0 },
+      lastCheckedAt: new Date().toISOString(),
+    };
+  }
+
+  const [activeResponse, hiddenResponse, titleRowsResponse, sourceRows] = await Promise.all([
+    db.from("titles").select("id", { count: "exact", head: true }).eq("is_active", true).neq("code", "articles").neq("slug", "articles"),
+    db.from("titles").select("id", { count: "exact", head: true }).eq("is_active", false).neq("code", "articles").neq("slug", "articles"),
+    db.from("titles").select("id,is_series").eq("is_active", true).neq("code", "articles").neq("slug", "articles").range(0, 9999),
+    fetchAllTitleLevelSources(db),
   ]);
 
-  if (assetsResponse.error) throw new Error(assetsResponse.error.message);
-  if (sourcesResponse.error) throw new Error(sourcesResponse.error.message);
+  if (activeResponse.error) throw new Error(activeResponse.error.message);
+  if (hiddenResponse.error) throw new Error(hiddenResponse.error.message);
+  if (titleRowsResponse.error) throw new Error(titleRowsResponse.error.message);
 
-  const assets = (assetsResponse.data || []) as AssetRow[];
-  const sources = (sourcesResponse.data || []) as SourceRow[];
+  const titleRows = (titleRowsResponse.data || []) as Array<{ id: number; is_series: boolean }>;
+  const titleIds = titleRows.map((row) => Number(row.id));
+  const readyIds = new Set(titleIdsForFilter(titleIds, sourceRows, "ready") || []);
+  const noPlayerIds = new Set(titleIdsForFilter(titleIds, sourceRows, "no-player") || []);
+  const brokenIds = new Set(titleIdsForFilter(titleIds, sourceRows, "broken") || []);
+  const unknownIds = new Set(titleIdsForFilter(titleIds, sourceRows, "unknown") || []);
+  const sourceStatus: AdminCatalogOverview["sourceStatus"] = { pass: 0, blocked: 0, error: 0, expired: 0, unknown: 0 };
+  for (const source of sourceRows) sourceStatus[source.status] += 1;
 
   return {
-    items: titles.map((title) =>
-      toCatalogItem(
-        title,
-        assets.filter((asset) => String(asset.title_id) === String(title.id)),
-        sources.filter((source) => String(source.title_id) === String(title.id)),
-      ),
-    ),
-    total: titleResponse.count || 0,
+    configured: true,
+    activeTitles: activeResponse.count || 0,
+    hiddenTitles: hiddenResponse.count || 0,
+    readyTitles: readyIds.size,
+    noPlayerTitles: noPlayerIds.size,
+    brokenTitles: brokenIds.size,
+    unknownTitles: unknownIds.size,
+    movieTitles: titleRows.filter((row) => !row.is_series).length,
+    seriesTitles: titleRows.filter((row) => row.is_series).length,
+    sourceCount: sourceRows.length,
+    sourceStatus,
+    lastCheckedAt: new Date().toISOString(),
   };
 }
 
@@ -278,7 +465,7 @@ export async function fetchCatalogDetail(id: number): Promise<CatalogDetail | nu
   const titleResponse = await db
     .from("titles")
     .select(
-      "id,canonical_url,code,slug,title,original_title,synopsis,release_date,duration_seconds,language,is_series,last_seen_at",
+      "id,canonical_url,code,slug,title,original_title,synopsis,release_date,duration_seconds,language,is_series,last_seen_at,is_active",
     )
     .eq("id", id)
     .maybeSingle();

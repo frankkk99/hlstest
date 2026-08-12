@@ -45,6 +45,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.rewrite(copySearch(request, new URL(adminTools[pathname], request.url)));
   }
 
+  if (pathname.startsWith("/admin/")) {
+    const expected = await createAdminSessionToken();
+    const provided = request.cookies.get(ADMIN_SESSION_COOKIE)?.value || "";
+    if (expected && provided === expected) return NextResponse.next();
+    const login = new URL("/admin/login", request.url);
+    login.searchParams.set("next", pathname + request.nextUrl.search);
+    return NextResponse.redirect(login);
+  }
+
   if (pathname === "/admin") {
     const expected = await createAdminSessionToken();
     const provided = request.cookies.get(ADMIN_SESSION_COOKIE)?.value || "";
