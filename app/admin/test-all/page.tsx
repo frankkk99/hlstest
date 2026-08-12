@@ -125,7 +125,10 @@ export default function TestAllPage() {
     setPlayerLoading(true);
     setPlayerMessage("กำลังโหลดภาพและเริ่มเล่น Player…");
     video.muted = true;
-    const source = session.proxyUrl || session.mediaUrl;
+    // The generic /api/stream proxy is disabled in production. Keep the
+    // Chromium page session alive and proxy the manifest/segments through the
+    // browser-session route so upstream cookies and Referer are retained.
+    const source = `/api/browser-session?session=${encodeURIComponent(session.sessionId)}&url=${encodeURIComponent(session.mediaUrl)}`;
     const timeout = 15000;
 
     function waitForActualPlayback() {
