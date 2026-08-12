@@ -50,15 +50,12 @@ function formatDuration(seconds: number | null) {
   return hours ? `${hours}:${String(minutes).padStart(2, "0")} ชม.` : `${minutes} นาที`;
 }
 
-function statusLabel(item: CatalogItem) {
-  if (!item.hasPlayer) return { label: "NO PLAYER", className: "catalog-badge neutral" };
-  if (item.playerStatus === "pass") return { label: "PLAYER PASS", className: "catalog-badge good" };
-  if (item.playerStatus === "blocked") return { label: "BLOCKED", className: "catalog-badge bad" };
-  return { label: "ตรวจสอบอีกครั้ง", className: "catalog-badge warning" };
-}
-
 function titleText(item: CatalogItem) {
   return item.title || item.originalTitle || item.code || "ไม่มีชื่อเรื่อง";
+}
+
+function formatYear(date: string | null) {
+  return date?.slice(0, 4) || "ไม่ระบุปี";
 }
 
 function imageProxyUrl(url: string | null) {
@@ -286,7 +283,6 @@ export default function MoviesPage() {
         ) : (
           <div className="catalog-grid">
             {items.map((item) => {
-              const status = statusLabel(item);
               const active = selected?.id === item.id;
               return (
                 <button key={item.id} className={`catalog-card ${active ? "selected" : ""}`} type="button" onClick={() => void playItem(item)}>
@@ -307,13 +303,10 @@ export default function MoviesPage() {
                         }}
                       />
                     ) : <div className="catalog-cover-placeholder">NO COVER</div>}
-                    <span className={status.className}>{status.label}</span>
-                    {item.isSeries && <span className="catalog-series-badge">SERIES</span>}
                   </div>
                   <div className="catalog-card-body">
                     <strong>{titleText(item)}</strong>
-                    <span>{item.code || item.originalTitle || "ไม่มีรหัส"}</span>
-                    <small>{formatDuration(item.durationSeconds)} · {item.sourceCount} source</small>
+                    <span>{formatYear(item.releaseDate)} · {formatDuration(item.durationSeconds)}</span>
                   </div>
                 </button>
               );
