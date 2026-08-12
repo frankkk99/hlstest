@@ -36,7 +36,7 @@ export default function BrowsePage({ mode }: { mode: BrowseMode }) {
     append ? setLoadingMore(true) : setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ page: String(nextPage), limit: "48", sort: "latest", ready: "1" });
+      const params = new URLSearchParams({ page: String(nextPage), limit: "48", sort: "latest", ready: "1", curated: "1" });
       if (search.trim()) params.set("search", search.trim());
       const response = await fetch(`/api/catalog?${params}`, { cache: "default" });
       const data = (await response.json()) as CatalogResponse;

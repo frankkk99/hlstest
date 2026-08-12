@@ -1,13 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
+import { PUBLIC_CURATED_CODES } from "@/lib/curated-catalog";
 import { fetchCatalogPage, isCatalogConfigured } from "@/lib/hlshub-catalog";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const getCachedCatalogPage = unstable_cache(
-  (page: number, limit: number, search: string, sort: "latest" | "release" | "title", readyOnly: boolean) =>
-    fetchCatalogPage({ page, limit, search, sort, readyOnly }),
+  (
+    page: number,
+    limit: number,
+    search: string,
+    sort: "latest" | "release" | "title",
+    readyOnly: boolean,
+    curated: boolean,
+  ) =>
+    fetchCatalogPage({
+      page,
+      limit,
+      search,
+      sort,
+      readyOnly,
+      codes: curated ? PUBLIC_CURATED_CODES : undefined,
+    }),
   ["hlshub-catalog-page-v1"],
   { revalidate: 30, tags: ["hlshub-catalog"] },
 );
@@ -26,11 +41,12 @@ export async function GET(request: NextRequest) {
   const sortParam = request.nextUrl.searchParams.get("sort");
   const sort = sortParam === "title" || sortParam === "release" ? sortParam : "latest";
   const readyOnly = ["1", "true", "yes"].includes(request.nextUrl.searchParams.get("ready") || "");
+  const curated = ["1", "true", "yes"].includes(request.nextUrl.searchParams.get("curated") || "");
 
   try {
-    const result = await getCachedCatalogPage(page, limit, search, sort, readyOnly);
+    const result = await getCachedCatalogPage(page, limit, search, sort, readyOnly, curated);
     return NextResponse.json(
-      { ok: true, page, limit, readyOnly, ...result },
+      { ok: true, page, limit, readyOnly, curated, ...result },
       {
         headers: {
           "Cache-Control": "public, s-maxage=30, stale-while-revalidate=120",

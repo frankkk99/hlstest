@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { publicCuratedOrder } from "@/lib/curated-catalog";
 
 export type CatalogItem = {
   id: number;
@@ -288,6 +289,7 @@ export async function fetchCatalogPage(options: {
   search?: string;
   sort?: "latest" | "release" | "title";
   readyOnly?: boolean;
+  codes?: readonly string[];
 }) {
   const db = getCatalogDb();
   if (!db) throw new Error("ยังไม่ได้ตั้งค่า HLSHUB_SUPABASE_SERVICE_ROLE_KEY");
@@ -310,6 +312,7 @@ export async function fetchCatalogPage(options: {
     .neq("slug", "articles");
 
   if (playableTitleIds) query = query.in("id", playableTitleIds);
+  if (options.codes?.length) query = query.in("code", [...options.codes]);
 
   const search = options.search?.trim();
   if (search) {
@@ -334,8 +337,11 @@ export async function fetchCatalogPage(options: {
     return { items: [] as CatalogItem[], total: titleResponse.count || 0 };
   }
 
+  const items = await fetchCatalogItemsForTitles(db, titles);
+  if (options.codes?.length) items.sort((left, right) => publicCuratedOrder(left.code) - publicCuratedOrder(right.code));
+
   return {
-    items: await fetchCatalogItemsForTitles(db, titles),
+    items,
     total: titleResponse.count || 0,
   };
 }

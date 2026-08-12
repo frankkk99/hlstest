@@ -66,6 +66,7 @@ export default function StorefrontHome() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<StorefrontItem | null>(null);
+  const [heroIndex, setHeroIndex] = useState(0);
 
   async function loadCatalog(query = "") {
     setLoading(true);
@@ -76,6 +77,7 @@ export default function StorefrontHome() {
         limit: "48",
         sort: "latest",
         ready: "1",
+        curated: "1",
       });
       if (query.trim()) params.set("search", query.trim());
 
@@ -89,6 +91,7 @@ export default function StorefrontHome() {
 
       setItems(data.items || []);
       setTotal(data.total || 0);
+      setHeroIndex(0);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "ยังโหลดรายการไม่สำเร็จ");
     } finally {
@@ -110,9 +113,10 @@ export default function StorefrontHome() {
   }, []);
 
   const playableItems = useMemo(() => items.filter((item) => item.hasPlayer), [items]);
-  const hero = playableItems[0];
-  const latestItems = useMemo(() => playableItems.slice(0, 12), [playableItems]);
-  const readyItems = useMemo(() => playableItems.slice(0, 12), [playableItems]);
+  const heroItems = useMemo(() => playableItems.slice(0, 6), [playableItems]);
+  const hero = heroItems[Math.min(heroIndex, Math.max(0, heroItems.length - 1))];
+  const latestItems = playableItems;
+  const readyItems = heroItems;
 
   return (
     <main className={styles.storefront}>
@@ -150,6 +154,20 @@ export default function StorefrontHome() {
                 <Link className={styles.secondaryButton} href={`/hub/watch/${hero.id}`}>
                   เริ่มรับชม
                 </Link>
+              </div>
+              <div className={styles.heroChoices} aria-label="เลือกเรื่องเด่น">
+                {heroItems.map((item, index) => (
+                  <button
+                    key={item.id}
+                    className={`${styles.heroChoice} ${index === heroIndex ? styles.heroChoiceActive : ""}`}
+                    type="button"
+                    onClick={() => setHeroIndex(index)}
+                    aria-label={`เลือกเรื่องเด่นลำดับ ${index + 1}`}
+                  >
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <strong>{displayTitle(item)}</strong>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
