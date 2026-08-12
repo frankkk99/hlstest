@@ -13,7 +13,6 @@ function BrowseCard({ item }: { item: StorefrontItem }) {
   return <Link href={`/hub/watch/${item.id}`} className={styles.card}>
     <div className={styles.cover}>
       <Image src={imageUrl(item.coverUrl)} alt={displayTitle(item)} fill unoptimized sizes="(max-width: 760px) 50vw, (max-width: 1120px) 25vw, 16vw" onError={(event) => { event.currentTarget.src = "/cover-fallback.svg"; }} />
-      <span className={item.hasPlayer ? styles.ready : styles.pending}>{item.hasPlayer ? "พร้อมรับชม" : "กำลังเตรียม"}</span>
     </div>
     <div className={styles.cardBody}><strong>{displayTitle(item)}</strong><span>{yearLabel(item.releaseDate)} · {durationLabel(item.durationSeconds)}</span></div>
   </Link>;

@@ -8,7 +8,6 @@ import {
   displayTitle,
   durationLabel,
   imageUrl,
-  viewerStatus,
   yearLabel,
   type StorefrontItem,
 } from "./storefront";
@@ -22,11 +21,9 @@ type CatalogResponse = {
 
 function MovieCard({
   item,
-  fresh,
   onSelect,
 }: {
   item: StorefrontItem;
-  fresh?: boolean;
   onSelect: (item: StorefrontItem) => void;
 }) {
   return (
@@ -42,10 +39,6 @@ function MovieCard({
             event.currentTarget.src = "/cover-fallback.svg";
           }}
         />
-        <span className={`${styles.status} ${item.hasPlayer ? styles.statusReady : ""}`}>
-          {viewerStatus(item)}
-        </span>
-        {fresh && <span className={`${styles.status} ${styles.statusNew}`}>ใหม่</span>}
         <span className={styles.coverShade} />
       </div>
       <div className={styles.cardBody}>
@@ -113,10 +106,9 @@ export default function StorefrontHome() {
   }, []);
 
   const playableItems = useMemo(() => items.filter((item) => item.hasPlayer), [items]);
-  const heroItems = useMemo(() => playableItems.slice(0, 6), [playableItems]);
+  const heroItems = useMemo(() => playableItems.slice(0, 4), [playableItems]);
   const hero = heroItems[Math.min(heroIndex, Math.max(0, heroItems.length - 1))];
   const latestItems = playableItems;
-  const readyItems = heroItems;
 
   return (
     <main className={styles.storefront}>
@@ -203,26 +195,14 @@ export default function StorefrontHome() {
           <div className={styles.loading}>กำลังเตรียมรายการให้รับชม...</div>
         ) : playableItems.length ? (
           <>
-            <section className={styles.row} id="latest">
-              <div className={styles.rowHeader}>
-                <h2>เข้าใหม่ล่าสุด</h2>
-                <span>{latestItems.length} เรื่อง</span>
-              </div>
-              <div className={styles.cardGrid}>
-                {latestItems.map((item, index) => (
-                  <MovieCard key={item.id} item={item} fresh={index < 6} onSelect={setSelected} />
-                ))}
-              </div>
-            </section>
-
             <section className={styles.row} id="ready">
               <div className={styles.rowHeader}>
                 <h2>พร้อมรับชม</h2>
-                <span>คัดสรรมาให้คุณ</span>
+                <span>{latestItems.length} เรื่อง</span>
               </div>
               <div className={styles.cardGrid}>
-                {(readyItems.length ? readyItems : latestItems).map((item) => (
-                  <MovieCard key={`ready-${item.id}`} item={item} onSelect={setSelected} />
+                {latestItems.map((item) => (
+                  <MovieCard key={item.id} item={item} onSelect={setSelected} />
                 ))}
               </div>
             </section>
