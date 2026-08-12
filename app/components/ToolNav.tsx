@@ -4,15 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tools = [
-  { href: "/avdb-import-test", label: "AVDB Import", note: "ดึงข้อมูล 1 หน้า" },
-  { href: "/", label: "HLS Test", note: "ตรวจ Manifest / Segment" },
-  { href: "/embed-test", label: "Embed Test", note: "ทดลองครอบ Player" },
+  { href: "/admin/avdb-import-test", label: "AVDB Import", note: "ดึงข้อมูล 1 หน้า" },
+  { href: "/admin/hls-test", label: "HLS Test", note: "ตรวจ Manifest / Segment" },
+  { href: "/admin/embed-test", label: "Embed Test", note: "ทดลองครอบ Player" },
 ];
 
 export default function ToolNav() {
   const pathname = usePathname();
 
-  if (pathname === "/embed" || pathname.startsWith("/embed/")) return null;
+  if (
+    pathname === "/" ||
+    pathname === "/movies" ||
+    pathname.startsWith("/hub") ||
+    pathname === "/embed" ||
+    pathname.startsWith("/embed/") ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/")
+  ) return null;
 
   return (
     <div
@@ -53,7 +61,7 @@ export default function ToolNav() {
 
         <div style={{ display: "flex", gap: 7, overflowX: "auto", paddingBottom: 1 }}>
           {tools.map((tool) => {
-            const active = tool.href === "/" ? pathname === "/" : pathname.startsWith(tool.href);
+            const active = pathname === tool.href || pathname.startsWith(`${tool.href}/`);
             return (
               <Link
                 key={tool.href}

@@ -13,6 +13,7 @@
 - แสดง CORS, `X-Request-Id`, `X-U18-Cache`, `X-U18-Guard`
 - รองรับ Upload18/helvid.com ผ่าน allowlist เริ่มต้น
 - Preview ผ่าน HLS.js + local stream proxy (ปิดไว้โดยค่าเริ่มต้น)
+- Player Extractor ที่ `/player-extractor` สำหรับอ่าน URL หน้าเว็บ/HTML, ถอด JavaScript packer และทดสอบ `.m3u8` / `.mp4`
 
 ## รัน Local
 
@@ -27,7 +28,13 @@ npm run dev
 หากต้องการ Preview ให้แก้ `.env.local`:
 
 ```env
-ALLOWED_HLS_HOSTS=helvid.com
+ALLOWED_HLS_HOSTS=helvid.com,surrit.com,fourhoi.com
+
+# ใช้กับหน้า Player Extractor ตอนใส่ URL หน้าเว็บ
+ALLOWED_SOURCE_PAGE_HOSTS=missav123.com,missav.com,fourhoi.com,upload18.org
+
+# ใช้เพิ่ม media host ที่อนุญาตให้ extractor ยิงทดสอบ
+ALLOWED_EXTRACT_MEDIA_HOSTS=surrit.com,fourhoi.com
 ENABLE_STREAM_PROXY=true
 ```
 
