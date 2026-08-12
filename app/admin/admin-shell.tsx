@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from "./admin.module.css";
 
-const nav = [["/admin", "ภาพรวม"], ["/admin/catalog", "จัดการรายการ"], ["/admin/health", "Player Health"], ["/admin/tools", "เครื่องมือเดิม"], ["/admin/system", "ระบบ"]] as const;
+const nav = [["/admin", "ภาพรวม"], ["/admin/catalog", "จัดการรายการ"], ["/admin/test-all", "ทดสอบทุกเรื่อง"], ["/admin/health", "Player Health"], ["/admin/tools", "เครื่องมือเดิม"], ["/admin/system", "ระบบ"]] as const;
 
 export default function AdminShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   const pathname = usePathname();
