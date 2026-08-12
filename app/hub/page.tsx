@@ -70,7 +70,6 @@ export default function StorefrontHome() {
         limit: "48",
         sort: "latest",
         ready: "1",
-        curated: "1",
       });
       if (query.trim()) params.set("search", query.trim());
 
@@ -106,7 +105,7 @@ export default function StorefrontHome() {
   }, []);
 
   const playableItems = useMemo(() => items.filter((item) => item.hasPlayer), [items]);
-  const heroItems = useMemo(() => playableItems.slice(0, 4), [playableItems]);
+  const heroItems = useMemo(() => playableItems.slice(0, 6), [playableItems]);
   const hero = heroItems[Math.min(heroIndex, Math.max(0, heroItems.length - 1))];
   const latestItems = playableItems;
 

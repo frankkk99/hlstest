@@ -92,7 +92,7 @@ export default function MoviesPage() {
     else setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ page: String(nextPage), limit: "24", sort, ready: "1", curated: "1" });
+      const params = new URLSearchParams({ page: String(nextPage), limit: "24", sort, ready: "1" });
       if (search.trim()) params.set("search", search.trim());
       const response = await fetch(`/api/catalog?${params.toString()}`, { cache: "default" });
       const data = (await response.json()) as CatalogResponse;

@@ -36,7 +36,7 @@ export default function StorefrontWatchPage() {
       try {
         const [detailResponse, catalogResponse] = await Promise.all([
           fetch(`/api/catalog/${id}`, { cache: "default" }),
-          fetch("/api/catalog?limit=12&sort=latest&ready=1&curated=1", { cache: "default" }),
+          fetch("/api/catalog?limit=12&sort=latest&ready=1", { cache: "default" }),
         ]);
         const detail = (await detailResponse.json()) as DetailResponse;
         const catalog = (await catalogResponse.json()) as { items?: StorefrontItem[] };
