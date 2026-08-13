@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import styles from "./browse.module.css";
 import { displayTitle, durationLabel, imageUrl, type StorefrontItem, yearLabel } from "./storefront";
+import { BrowseSkeleton } from "./skeletons";
 
 type BrowseMode = "movies" | "series";
 type CatalogResponse = { ok: boolean; error?: string; total?: number; items?: StorefrontItem[] };
@@ -55,12 +56,12 @@ export default function BrowsePage({ mode }: { mode: BrowseMode }) {
   useEffect(() => { void load(); }, []);
 
   return <main className={styles.page}>
-    <div className={styles.container}>
+    {loading && !items.length ? <BrowseSkeleton /> : <div className={styles.container}>
       <div className={styles.topline}><div><p className={styles.kicker}>HLSHUB</p><h1>{title}</h1><p>เลือกเรื่องที่ต้องการรับชมจากรายการล่าสุด</p></div><span>{filtered.length.toLocaleString()} เรื่อง</span></div>
       <form className={styles.searchbar} onSubmit={(event) => { event.preventDefault(); void load(); }}><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อเรื่อง..." aria-label="ค้นหาชื่อเรื่อง" /><button type="submit" disabled={loading}>ค้นหา</button></form>
       {error && <div className={styles.error}>{error}</div>}
-      {loading && !items.length ? <div className={styles.empty}>กำลังโหลดรายการ...</div> : !filtered.length ? <div className={styles.empty}>ยังไม่มีรายการในหมวดนี้</div> : <section className={styles.grid}>{filtered.map((item) => <BrowseCard key={item.id} item={item} />)}</section>}
+      {!filtered.length ? <div className={styles.empty}>ยังไม่มีรายการในหมวดนี้</div> : <section className={styles.grid}>{filtered.map((item) => <BrowseCard key={item.id} item={item} />)}</section>}
       {hasMore && <button className={styles.more} type="button" onClick={() => void load(page + 1, true)} disabled={loadingMore}>{loadingMore ? "กำลังโหลด..." : "แสดงเพิ่มเติม"}</button>}
-    </div>
+    </div>}
   </main>;
 }

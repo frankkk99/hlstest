@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import styles from "./hub.module.css";
+import { HomeSkeleton } from "./skeletons";
 import {
   displayTitle,
   durationLabel,
@@ -165,7 +166,7 @@ export default function StorefrontHome() {
         </section>
       )}
 
-      <div className={styles.container}>
+      {loading ? <HomeSkeleton /> : <div className={styles.container}>
         <div className={styles.toolbar}>
           <div>
             <h2 className={styles.sectionTitle}>ดูหนังออนไลน์</h2>
@@ -190,26 +191,18 @@ export default function StorefrontHome() {
 
         {error && <div className={styles.error}>{error}</div>}
 
-        {loading ? (
-          <div className={styles.loading}>กำลังเตรียมรายการให้รับชม...</div>
-        ) : playableItems.length ? (
-          <>
-            <section className={styles.row} id="ready">
-              <div className={styles.rowHeader}>
-                <h2>พร้อมรับชม</h2>
-                <span>{latestItems.length} เรื่อง</span>
-              </div>
-              <div className={styles.cardGrid}>
-                {latestItems.map((item) => (
-                  <MovieCard key={item.id} item={item} onSelect={setSelected} />
-                ))}
-              </div>
-            </section>
-          </>
-        ) : (
-          <div className={styles.empty}>ยังไม่มีเรื่องที่พร้อมรับชมในตอนนี้</div>
-        )}
-      </div>
+        {playableItems.length ? <section className={styles.row} id="ready">
+          <div className={styles.rowHeader}>
+            <h2>พร้อมรับชม</h2>
+            <span>{latestItems.length} เรื่อง</span>
+          </div>
+          <div className={styles.cardGrid}>
+            {latestItems.map((item) => (
+              <MovieCard key={item.id} item={item} onSelect={setSelected} />
+            ))}
+          </div>
+        </section> : <div className={styles.empty}>ยังไม่มีเรื่องที่พร้อมรับชมในตอนนี้</div>}
+      </div>}
 
       {selected && (
         <div

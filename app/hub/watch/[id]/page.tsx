@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import styles from "../../hub.module.css";
+import { WatchSkeleton } from "../../skeletons";
 import { displayTitle, durationLabel, imageUrl, yearLabel, type StorefrontDetail, type StorefrontItem } from "../../storefront";
 
 type DetailResponse = { ok: boolean; error?: string; item?: StorefrontDetail };
@@ -117,7 +118,7 @@ export default function StorefrontWatchPage() {
     }
   }
 
-  if (loading) return <main className={styles.watch}><div className={styles.container}><div className={styles.watchLoadingPage} role="status" aria-live="polite"><span>กำลังเตรียมหน้าเล่น...</span><div className={styles.watchProgressTrack} aria-label="กำลังโหลด"><span className={styles.watchProgressBar} /></div></div></div></main>;
+  if (loading) return <WatchSkeleton />;
   if (!item) return <main className={styles.watch}><div className={styles.container}><div className={styles.error}>{message}</div><Link className={styles.back} href="/hub">← กลับหน้าแรก</Link></div></main>;
 
   return <main className={styles.watch}>

@@ -150,6 +150,48 @@
 .empty, .loading { padding: 60px 20px; border: 1px dashed rgba(255, 255, 255, .14); border-radius: 18px; color: #8794a6; text-align: center; }
 .error { margin: 18px 0; border: 1px solid rgba(255, 123, 140, .35); border-radius: 12px; padding: 12px 14px; color: #ffb7c1; background: rgba(255, 123, 140, .08); }
 
+.skeletonHome { min-height: 100vh; background: #070b12; color: #f5f7fb; padding-bottom: 72px; }
+.skeletonBlock { position: relative; display: block; overflow: hidden; border-radius: 8px; background: linear-gradient(105deg, rgba(255,255,255,.055) 20%, rgba(255,255,255,.12) 38%, rgba(255,255,255,.055) 56%); background-size: 240% 100%; animation: skeletonShimmer 1.65s linear infinite; }
+.skeletonHero { min-height: 520px; margin: 0 auto; overflow: hidden; border-radius: 0 0 28px 28px; background: linear-gradient(105deg, #0c131e, #141f2d 42%, #0b121d); }
+.skeletonHeroContent { width: min(620px, 100%); padding: 52px 0 62px 58px; }
+.skeletonHeroKicker { width: 150px; height: 12px; }
+.skeletonHeroTitle, .skeletonHeroTitleShort { height: 50px; margin-top: 18px; border-radius: 10px; }
+.skeletonHeroTitle { width: min(570px, 90%); }
+.skeletonHeroTitleShort { width: min(390px, 65%); margin-top: 9px; }
+.skeletonHeroDescription, .skeletonHeroDescriptionShort { height: 12px; margin-top: 25px; }
+.skeletonHeroDescription { width: min(540px, 90%); }
+.skeletonHeroDescriptionShort { width: min(410px, 70%); margin-top: 10px; }
+.skeletonHeroMeta, .skeletonHeroActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.skeletonPill, .skeletonPillSmall { width: 82px; height: 28px; border-radius: 999px; }
+.skeletonPillSmall { width: 68px; }
+.skeletonHeroActions { margin-top: 26px; gap: 10px; }
+.skeletonButton, .skeletonButtonSecondary { width: 126px; height: 40px; border-radius: 10px; }
+.skeletonButtonSecondary { width: 105px; }
+.skeletonHeroChoices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 620px; margin-top: 22px; }
+.skeletonChoice { height: 37px; border-radius: 10px; }
+.skeletonToolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 30px auto 22px; }
+.skeletonSectionTitle { width: 180px; height: 25px; }
+.skeletonSectionNote { width: 115px; height: 10px; margin-top: 9px; }
+.skeletonSearch { width: min(340px, 100%); height: 38px; border-radius: 999px; }
+.skeletonRowTitle { width: 138px; height: 21px; }
+.skeletonRowCount { width: 52px; height: 12px; }
+.skeletonCard { min-width: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: #111925; }
+.skeletonCover { width: 100%; aspect-ratio: 16 / 9; border-radius: 0; }
+.skeletonCardBody { min-height: 88px; padding: 11px 11px 13px; }
+.skeletonTitle { width: 88%; height: 14px; }
+.skeletonMeta { width: 56%; height: 10px; margin-top: 13px; }
+.skeletonBack { width: 110px; height: 14px; margin: 24px 0 16px; }
+.skeletonWatchPlayer { position: relative; display: grid; place-items: center; width: min(100%, 1120px); aspect-ratio: 16 / 9; margin: 0 auto; overflow: hidden; border-radius: 18px; background: linear-gradient(105deg, #0b111a, #182332 42%, #0a1018); }
+.skeletonPlayButton { width: 74px; height: 74px; border: 8px solid rgba(255,255,255,.09); border-radius: 50%; background: rgba(255,255,255,.07); box-shadow: 0 10px 35px rgba(0,0,0,.28); }
+.skeletonWatchInfo { display: grid; grid-template-columns: 1fr auto; gap: 20px; padding: 25px 0 10px; }
+.skeletonWatchTitle { width: min(560px, 80%); height: 32px; }
+.skeletonWatchMeta { width: 190px; height: 13px; margin-top: 17px; }
+.skeletonWatchDescription, .skeletonWatchDescriptionShort { width: min(760px, 90%); height: 12px; margin-top: 20px; }
+.skeletonWatchDescriptionShort { width: min(570px, 70%); margin-top: 9px; }
+.skeletonWatchMessage { align-self: center; width: 150px; height: 12px; }
+@keyframes skeletonShimmer { to { background-position: -140% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeletonBlock { animation: none; } }
+
 .modalBackdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .76); backdrop-filter: blur(10px); }
 .modal { position: relative; display: grid; grid-template-columns: 230px 1fr; width: min(720px, 100%); overflow: hidden; border: 1px solid rgba(255, 255, 255, .15); border-radius: 20px; background: #121b28; box-shadow: 0 30px 100px rgba(0, 0, 0, .55); }
 .modalCover { position: relative; min-height: 340px; background: #182333; }
@@ -205,4 +247,12 @@
   .modalTitle { font-size: 20px; }
   .watchInfo { grid-template-columns: 1fr; }
   .watchPlayer { width: 100%; border-radius: 12px; }
+  .skeletonHeroContent { padding: 34px 24px 42px; }
+  .skeletonHeroTitle, .skeletonHeroTitleShort { height: 35px; }
+  .skeletonHeroChoices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skeletonToolbar { align-items: stretch; flex-direction: column; }
+  .skeletonSearch { width: 100%; }
+  .skeletonWatchInfo { grid-template-columns: 1fr; }
+  .skeletonWatchPlayer { width: 100%; border-radius: 12px; }
+  .skeletonWatchMessage { margin-top: 4px; }
 }
