@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tools = [
-  { href: "/admin/avdb-import-test", label: "AVDB Import", note: "ดึงข้อมูล 1 หน้า" },
+  { href: "/admin/avdb-import-test", label: "AVDB Import", note: "ดึงข้อมูลหลายหน้า" },
   { href: "/admin/hls-test", label: "HLS Test", note: "ตรวจ Manifest / Segment" },
   { href: "/admin/embed-test", label: "Embed Test", note: "ทดลองครอบ Player" },
 ];
