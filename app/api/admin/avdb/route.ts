@@ -15,7 +15,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const state = await fetchAvdbAdminState();
-    return NextResponse.json({ ok: true, ...state }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(
+      { ok: true, ...state, crawlerConnected: true },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "อ่านสถานะ AVDB ไม่สำเร็จ" },
