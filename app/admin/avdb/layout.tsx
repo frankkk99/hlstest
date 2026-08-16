@@ -10,30 +10,62 @@ export default function AvdbAdminLayout({ children }: { children: ReactNode }) {
     <>
       <AvdbWorkerDriver />
       {children}
-      <Link
-        href="/admin/avdb-html-import"
+      <div
         style={{
           position: "fixed",
           right: 18,
           top: 84,
           zIndex: 70,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: 38,
-          padding: "0 14px",
-          border: "1px solid rgba(244,162,78,.55)",
-          borderRadius: 999,
-          color: "#18110a",
-          background: "#f4a24e",
-          boxShadow: "0 10px 30px rgba(0,0,0,.28)",
-          fontSize: 11,
-          fontWeight: 950,
-          textDecoration: "none",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "stretch",
+          gap: 8,
         }}
       >
-        HTML Import
-      </Link>
+        <Link
+          href="/admin/avdb-html-import"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 38,
+            padding: "0 14px",
+            border: "1px solid rgba(244,162,78,.55)",
+            borderRadius: 999,
+            color: "#18110a",
+            background: "#f4a24e",
+            boxShadow: "0 10px 30px rgba(0,0,0,.28)",
+            fontSize: 11,
+            fontWeight: 950,
+            textDecoration: "none",
+          }}
+        >
+          HTML Import
+        </Link>
+        <a
+          href="/api/avdb/export?format=json"
+          download
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 38,
+            padding: "0 14px",
+            border: "1px solid rgba(113,209,255,.5)",
+            borderRadius: 999,
+            color: "#eaf8ff",
+            background: "rgba(20,79,112,.96)",
+            boxShadow: "0 10px 30px rgba(0,0,0,.28)",
+            fontSize: 11,
+            fontWeight: 950,
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+          }}
+          title="ดาวน์โหลดข้อมูล AVDB ทั้งหมดเป็น JSON"
+        >
+          ดาวน์โหลด JSON
+        </a>
+      </div>
       <AvdbMoreLoader />
       <AvdbPublishConsole />
       <AvdbPlayerConsole />
