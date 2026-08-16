@@ -290,15 +290,23 @@ export default function AvdbHtmlImportConsole() {
       throw new Error(message);
     }
     const returned = new Map((payload.items || []).map((item) => [item.id, item]));
+    const failed = new Map((payload.errors || []).map((item) => [item.id, item.error]));
     for (const item of items) {
       const saved = returned.get(item.id);
+      if (!saved) {
+        patchCard(item.id, {
+          saveState: "error",
+          saveMessage: failed.get(item.id) || "API detail ไม่พร้อม จึงยังไม่ได้บันทึก",
+        });
+        continue;
+      }
       patchCard(item.id, {
         saveState: "saved",
-        saveMessage: saved?.stageStatus || "บันทึกแล้ว",
+        saveMessage: saved.stageStatus || "บันทึกแล้ว",
         saved: true,
-        stageItemId: saved?.stageItemId || item.stageItemId,
-        stageStatus: saved?.stageStatus || item.stageStatus || "staged",
-        playerStatus: saved?.playerStatus || item.playerStatus,
+        stageItemId: saved.stageItemId || item.stageItemId,
+        stageStatus: saved.stageStatus || item.stageStatus || "staged",
+        playerStatus: saved.playerStatus || item.playerStatus,
       });
     }
   }
@@ -308,7 +316,7 @@ export default function AvdbHtmlImportConsole() {
     if (!item || item.saveState === "saving") return false;
     try {
       await saveBatch([item]);
-      return true;
+      return cardsRef.current.find((entry) => entry.id === id)?.saveState === "saved";
     } catch {
       return false;
     }
@@ -435,8 +443,8 @@ export default function AvdbHtmlImportConsole() {
                   <div className={styles.cardActions}>
                     <button type="button" disabled={!item.hasPlayer || item.testState === "testing" || Boolean(bulkBusy)} onClick={() => void testOne(item.id, false)}>ทดสอบ</button>
                     {item.playbackUrl ? <button type="button" onClick={() => openPlayer(item.id)}>เปิด Player</button> : null}
-                    <button type="button" disabled={item.saveState === "saving" || item.saveState === "saved" || Boolean(bulkBusy)} onClick={() => void saveOne(item.id)}>บันทึก</button>
-                    <button type="button" className={styles.actionPrimary} disabled={!item.hasPlayer || item.testState === "testing" || item.saveState === "saving" || item.saveState === "saved" || Boolean(bulkBusy)} onClick={() => void testAndSave(item.id)}>ทดสอบ + บันทึก</button>
+                    <button type="button" disabled={item.saveState === "saving" || Boolean(bulkBusy)} onClick={() => void saveOne(item.id)}>{item.saveState === "saved" ? "อัปเดต" : "บันทึก"}</button>
+                    <button type="button" className={styles.actionPrimary} disabled={!item.hasPlayer || item.testState === "testing" || item.saveState === "saving" || Boolean(bulkBusy)} onClick={() => void testAndSave(item.id)}>ทดสอบ + {item.saveState === "saved" ? "อัปเดต" : "บันทึก"}</button>
                   </div>
                 </div>
               </article>
