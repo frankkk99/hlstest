@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { buildAvdbPageUrl, scanAvdbPage, type AvdbScanItem, type AvdbScanResult } from "@/lib/avdb-scanner";
+import { buildAvdbApiPageUrl, scanAvdbApiPage } from "@/lib/avdb-api-scanner";
+import { type AvdbScanItem, type AvdbScanResult } from "@/lib/avdb-scanner";
 
 export type AvdbWorkerResult = {
   ok: boolean;
@@ -132,6 +133,7 @@ async function markRunning(db: SupabaseClient, run: RunRow) {
         ...(run.metadata || {}),
         crawler_connected: true,
         worker_mode: "admin-tab-serial",
+        source_mode: "avdb-rest-api-pagination",
         worker_started_at: updatedAt,
       },
       updated_at: updatedAt,
@@ -143,9 +145,9 @@ async function markRunning(db: SupabaseClient, run: RunRow) {
 
   if (response.error) throw new Error(response.error.message);
   if (!response.data) return fetchRun(db, run.id);
-  await addLog(db, run.id, "success", "crawler", `เริ่ม Crawler จากหน้า ${run.current_page}`, {
+  await addLog(db, run.id, "success", "crawler", `เริ่ม API Worker จากหน้า ${run.current_page}`, {
     currentPage: run.current_page,
-    concurrency: run.concurrency,
+    sourceMode: "rest-api-pagination",
   });
   return response.data as RunRow;
 }
@@ -333,7 +335,7 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
       runId,
       status: run.status,
       pageNumber: run.current_page,
-      pageUrl: buildAvdbPageUrl(run.current_page),
+      pageUrl: buildAvdbApiPageUrl(run.current_page),
       itemsFound: 0,
       inserted: 0,
       updated: 0,
@@ -349,7 +351,7 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
       runId,
       status: run.status,
       pageNumber: run.current_page,
-      pageUrl: buildAvdbPageUrl(run.current_page),
+      pageUrl: buildAvdbApiPageUrl(run.current_page),
       itemsFound: 0,
       inserted: 0,
       updated: 0,
@@ -364,18 +366,18 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
   if (run.status !== "running") throw new Error(`Worker ไม่สามารถ claim run ได้ (${run.status})`);
 
   const pageNumber = Math.max(run.start_page, Math.min(run.end_page, run.current_page));
-  const pageUrl = buildAvdbPageUrl(pageNumber);
+  const pageUrl = buildAvdbApiPageUrl(pageNumber);
   const started = Date.now();
   let result: AvdbScanResult | null = null;
-  let lastError = "AVDB scan failed";
+  let lastError = "AVDB API scan failed";
 
   for (let attempt = 0; attempt <= run.retry_limit; attempt += 1) {
-    result = await scanAvdbPage(pageUrl, { apiConcurrency: run.concurrency });
+    result = await scanAvdbApiPage(pageNumber);
     if (result.ok && (result.items?.length || 0) > 0) break;
 
-    lastError = result.error || `หน้า ${pageNumber} ไม่พบรายการ JSON ที่อ่านได้`;
+    lastError = result.error || `API หน้า ${pageNumber} ไม่พบรายการ JSON ที่อ่านได้`;
     if (attempt < run.retry_limit) {
-      await addLog(db, run.id, "warn", "crawler", `หน้า ${pageNumber} ไม่ผ่าน — Retry ${attempt + 1}/${run.retry_limit}`, {
+      await addLog(db, run.id, "warn", "crawler", `API หน้า ${pageNumber} ไม่ผ่าน — Retry ${attempt + 1}/${run.retry_limit}`, {
         pageNumber,
         error: lastError,
       });
@@ -417,6 +419,7 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
     metadata: {
       ...(run.metadata || {}),
       crawler_connected: true,
+      source_mode: "avdb-rest-api-pagination",
       last_page_url: pageUrl,
       last_page_elapsed_ms: result.elapsedMs || Date.now() - started,
       last_api_links_found: result.apiLinksFound || 0,
@@ -434,7 +437,7 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
     run.id,
     "success",
     "crawler",
-    `หน้า ${pageNumber} เสร็จ: พบ ${result.itemsFound || 0} · ใหม่ ${staged.inserted} · อัปเดต ${staged.updated} · ซ้ำ ${staged.duplicates}`,
+    `API หน้า ${pageNumber} เสร็จ: พบ ${result.itemsFound || 0} · ใหม่ ${staged.inserted} · อัปเดต ${staged.updated} · ซ้ำ ${staged.duplicates}`,
     {
       pageNumber,
       pageUrl,
@@ -443,11 +446,12 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
       updated: staged.updated,
       duplicates: staged.duplicates,
       elapsedMs: result.elapsedMs || Date.now() - started,
+      sourceMode: "rest-api-pagination",
     },
   );
 
   if (finishedPage) {
-    await addLog(db, run.id, "success", "crawler", `Run เสร็จครบหน้า ${run.start_page}-${run.end_page}`, {
+    await addLog(db, run.id, "success", "crawler", `Run เสร็จครบ API หน้า ${run.start_page}-${run.end_page}`, {
       pagesScanned: updatedRun.pages_scanned,
       itemsDiscovered: updatedRun.items_discovered,
     });
@@ -465,7 +469,7 @@ async function executeStep(runId: string): Promise<AvdbWorkerResult> {
     duplicates: staged.duplicates,
     elapsedMs: Date.now() - started,
     continue: updatedRun.status === "running",
-    message: finishedPage ? "Run เสร็จครบช่วงหน้าแล้ว" : `พร้อมทำหน้าถัดไป ${nextPage}`,
+    message: finishedPage ? "Run เสร็จครบช่วง API หน้าแล้ว" : `พร้อมทำ API หน้าถัดไป ${nextPage}`,
   };
 }
 
