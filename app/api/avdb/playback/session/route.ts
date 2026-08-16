@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveAvdbFastPlayback } from "@/lib/avdb-fast-playback";
 import { fetchAvdbPlaybackSource } from "@/lib/avdb-playback";
 
 export const runtime = "nodejs";
@@ -9,6 +10,7 @@ type BrowserSessionPayload = {
   ok?: boolean;
   error?: string;
   failureType?: "chromium" | "player" | "auth";
+  cache?: string;
   session?: {
     sessionId: string;
     mediaUrl: string;
@@ -36,12 +38,47 @@ export async function POST(request: NextRequest) {
     }
 
     const source = await fetchAvdbPlaybackSource(catalogId);
+
+    // Fast path 1 + 2:
+    // 1) validate the latest verified HLS directly when it is available;
+    // 2) otherwise read Upload18 PLAYER_CONFIG and validate its HLS directly.
+    // Neither path launches Chromium. forceFresh skips the old media hint but
+    // still asks Upload18 for a fresh PLAYER_CONFIG before falling back.
+    const fast = await resolveAvdbFastPlayback({
+      pageUrl: source.playerPageUrl,
+      mediaHint: source.verifiedMediaUrl,
+      forceFresh,
+    });
+    if (fast) {
+      return NextResponse.json(
+        {
+          ok: true,
+          session: {
+            playbackUrl: fast.playbackUrl,
+            expiresAt: fast.expiresAt,
+            provider: source.playerProvider,
+            resolution: fast.mode,
+          },
+        },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+            "X-AVDB-Playback-Resolution": fast.mode,
+          },
+        },
+      );
+    }
+
+    // Full fallback: preserve the existing Browser Session / Upload18 auth /
+    // network capture flow. The verified HLS is also passed as mediaHint so the
+    // browser can validate it before waiting for a new network capture.
     const browserSessionUrl = new URL("/api/browser-session", request.nextUrl.origin);
     const sessionResponse = await fetch(browserSessionUrl, {
       method: "POST",
       headers: forwardHeaders(request),
       body: JSON.stringify({
         pageUrl: source.playerPageUrl,
+        mediaUrl: forceFresh ? "" : source.verifiedMediaUrl || "",
         forceFresh,
       }),
       cache: "no-store",
@@ -74,9 +111,15 @@ export async function POST(request: NextRequest) {
           playbackUrl,
           expiresAt: session.expiresAt,
           provider: source.playerProvider,
+          resolution: sessionPayload.cache === "hit" ? "browser-cache" : "browser-session",
         },
       },
-      { headers: { "Cache-Control": "no-store" } },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+          "X-AVDB-Playback-Resolution": sessionPayload.cache === "hit" ? "browser-cache" : "browser-session",
+        },
+      },
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "สร้าง AVDB Playback Session ไม่สำเร็จ";
