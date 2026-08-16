@@ -9,7 +9,7 @@ const legacyTools: Record<string, string> = {
 };
 
 const adminTools: Record<string, string> = {
-  "/admin/hls-test": "/",
+  "/admin/hls-test": "/hls-test",
   "/admin/avdb-import-test": "/avdb-import-test",
   "/admin/bulk-player-test": "/bulk-player-test",
   "/admin/player-extractor": "/player-extractor",
@@ -23,10 +23,6 @@ function copySearch(source: NextRequest, destination: URL) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  if (pathname === "/") {
-    return NextResponse.rewrite(new URL("/hub", request.url));
-  }
 
   if (legacyTools[pathname]) {
     return NextResponse.redirect(copySearch(request, new URL(legacyTools[pathname], request.url)));
@@ -68,7 +64,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/",
     "/admin",
     "/admin/login",
     "/admin/:path*",
