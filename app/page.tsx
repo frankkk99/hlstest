@@ -4,17 +4,17 @@ import styles from "./source-select.module.css";
 const sources = [
   {
     href: "/avdb",
-    badge: "AVDBAPI",
-    title: "AVDBAPI",
-    description: "หน้าเว็บหนังจาก AVDBAPI โดยตรง แสดงข้อมูลชื่อเรื่อง รหัส ปี คุณภาพ ระยะเวลา ภาพปก และ Player ที่พบจากแหล่งนี้",
-    action: "เปิดหน้า AVDBAPI",
+    badge: "AVDBAPI / PRE-IMPORT",
+    title: "AVDB INDEX",
+    description: "ประสบการณ์แบบฐานข้อมูลและ index เน้นรหัส เมทาดาทา และสถานะ Player ตอนนี้อยู่โหมดเตรียมระบบและยังไม่ดึงข้อมูลอัตโนมัติ",
+    action: "เปิด AVDB Index",
   },
   {
     href: "/hub",
-    badge: "MISSAV",
-    title: "MISSAV",
-    description: "หน้าเว็บหนังจาก catalog ฝั่ง MISSAV พร้อมรายการที่ผ่านการตรวจ Player แล้ว ระบบค้นหา Hero และหน้ารับชมเดิม",
-    action: "เปิดหน้า MISSAV",
+    badge: "MISSAV / LIVE",
+    title: "MISSAV CINEMA",
+    description: "ประสบการณ์แบบเว็บหนัง เน้น Hero, การค้นหา, การ์ดภาพยนตร์ และการรับชมจาก catalog MISSAV ที่ผ่าน Player health แล้ว",
+    action: "เปิด MISSAV Cinema",
   },
 ];
 
@@ -28,10 +28,10 @@ export default function SourceSelectorPage() {
         </header>
 
         <section className={styles.hero}>
-          <p className={styles.kicker}>CHOOSE CONTENT SOURCE</p>
+          <p className={styles.kicker}>CHOOSE CONTENT EXPERIENCE</p>
           <h1 className={styles.title}>เลือกแหล่งข้อมูลก่อนเข้าหน้าเว็บ</h1>
           <p className={styles.subtitle}>
-            แต่ละแหล่งแยกข้อมูลออกจากกันชัดเจน เมื่อเลือกแล้วจะเข้าสู่หน้าแรกแบบเว็บหนังของแหล่งนั้นโดยตรง
+            ทั้งสองแหล่งแยกข้อมูล, UX และระบบหลังบ้านออกจากกัน ไม่ใช้ catalog หรือ import pipeline ร่วมกัน
           </p>
         </section>
 
@@ -53,7 +53,7 @@ export default function SourceSelectorPage() {
         </section>
 
         <p className={styles.note}>
-          สามารถกลับมาหน้านี้ได้ตลอดจากปุ่ม “เปลี่ยนแหล่ง” โดยไม่ต้องรวมข้อมูล AVDBAPI และ MISSAV เข้าด้วยกัน
+          AVDBAPI ยังอยู่ PRE-IMPORT ส่วน MISSAV เป็น LIVE catalog การเข้าหน้า AVDB ไม่เริ่ม scan ต้นทางอัตโนมัติ
         </p>
       </div>
     </main>
