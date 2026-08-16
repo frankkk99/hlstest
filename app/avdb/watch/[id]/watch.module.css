@@ -29,39 +29,14 @@
 .routeSpinner { width: 30px; height: 30px; border: 2px solid rgba(255,255,255,.12); border-top-color: #f4a24e; border-radius: 50%; animation: routeSpin .72s linear infinite; }
 @keyframes routeSpin { to { transform: rotate(360deg); } }
 
-.playerFrame {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 100%;
-  aspect-ratio: 16 / 9;
+.gatewayPlayerShell {
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 18px;
   background: #050608;
   box-shadow: 0 24px 70px rgba(0,0,0,.4);
 }
-.videoSurface { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; transition: opacity .2s ease; }
-.videoWaiting { opacity: 0; }
-.videoReady { opacity: 1; }
-.loadingPoster { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: #050608; opacity: 1; filter: blur(0); transition: opacity .2s ease, filter .2s ease; pointer-events: none; }
-.loadingPoster img { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(1); animation: loadingPosterZoom 5.6s ease-in-out infinite alternate; will-change: transform; }
-.loadingPoster::after { content: ""; position: absolute; inset: -35%; background: linear-gradient(105deg,transparent 36%,rgba(255,255,255,.07) 48%,rgba(255,255,255,.13) 52%,transparent 64%); transform: translateX(-62%); animation: loadingPosterShimmer 2.2s ease-in-out infinite; pointer-events: none; }
-.loadingPosterFade { opacity: 0; filter: blur(1.5px); }
-@keyframes loadingPosterZoom { from { transform: scale(1); } to { transform: scale(1.08); } }
-@keyframes loadingPosterShimmer { 0% { transform: translateX(-62%); } 62%,100% { transform: translateX(62%); } }
-.posterShade { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(0,0,0,.06),rgba(0,0,0,.56)); pointer-events: none; }
-.playOverlay { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; }
-.playButton { pointer-events: auto; display: grid; place-items: center; width: 74px; height: 74px; border: 1px solid rgba(255,255,255,.32); border-radius: 50%; color: #18110a; background: #f4a24e; box-shadow: 0 14px 36px rgba(0,0,0,.34); font-size: 25px; cursor: pointer; transform: none; transition: background .15s ease, box-shadow .15s ease; }
-.playButton:hover { background: #ffb76e; box-shadow: 0 14px 36px rgba(0,0,0,.34); transform: none; }
-.playButton:active { transform: none; }
-.playButton:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
-.loadingOverlay { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 10px; padding: 0 15px 15px; background: linear-gradient(180deg,rgba(0,0,0,.08) 35%,rgba(0,0,0,.62)); opacity: 1; transition: opacity .18s ease; pointer-events: none; }
-.loadingOverlayFade { opacity: 0; }
-.loadingText { align-self: center; max-width: min(720px,92%); color: #fff; text-align: center; font-size: 12px; font-weight: 800; line-height: 1.5; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
-.progressTrack { width: 100%; height: 3px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.15); }
-.progressBar { display: block; width: 36%; height: 100%; border-radius: inherit; background: #f4a24e; animation: scan 1.05s ease-in-out infinite; }
-@keyframes scan { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
+.gatewayPlayerShell p { padding: 0 12px 10px; }
 
 .watchInfo { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 20px; align-items: start; padding: 24px 2px 6px; border-bottom: 1px solid rgba(255,255,255,.07); }
 .infoMain { min-width: 0; }
@@ -71,7 +46,8 @@
 .meta { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 15px; }
 .meta span { padding: 6px 9px; border: 1px solid rgba(255,255,255,.1); border-radius: 999px; color: #d0d5dc; background: rgba(255,255,255,.04); font-size: 8px; font-weight: 850; }
 .description { max-width: 880px; margin: 18px 0 0; color: #adb5c0; font-size: 11px; line-height: 1.72; white-space: pre-line; }
-.playbackMessage { align-self: start; max-width: 390px; margin: 2px 0 0; padding: 8px 11px; border-radius: 12px; color: #f4c38e; background: rgba(244,162,78,.08); font-size: 9px; font-weight: 850; line-height: 1.45; }
+.gatewayLink { align-self: start; margin-top: 2px; padding: 8px 11px; border: 1px solid rgba(244,162,78,.22); border-radius: 12px; color: #f4c38e; background: rgba(244,162,78,.08); text-decoration: none; font-size: 9px; font-weight: 850; white-space: nowrap; }
+.gatewayLink:hover { border-color: rgba(244,162,78,.52); color: #fff; }
 
 .related { margin-top: 27px; }
 .sectionHead { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 11px; }
@@ -93,16 +69,12 @@
 .emptyBox p { color: #8f98a5; font-size: 11px; line-height: 1.6; }
 .emptyBox a { display: inline-block; margin-top: 8px; padding: 9px 14px; border-radius: 9px; color: #18110a; text-decoration: none; background: #f4a24e; font-size: 10px; font-weight: 950; }
 
-@media (prefers-reduced-motion: reduce) {
-  .routeSpinner { animation-duration: 1.4s; }
-  .loadingPoster img, .loadingPoster::after { animation: none; }
-  .loadingPoster, .loadingOverlay, .videoSurface { transition: none; }
-}
+@media (prefers-reduced-motion: reduce) { .routeSpinner { animation-duration: 1.4s; } }
 
 @media (max-width: 900px) {
   .grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .watchInfo { grid-template-columns: 1fr; gap: 12px; }
-  .playbackMessage { justify-self: start; max-width: 100%; }
+  .gatewayLink { justify-self: start; }
 }
 
 @media (max-width: 720px) {
@@ -111,10 +83,7 @@
   .back { justify-self: end; font-size: 9px; }
   .header > :last-child { display: none; }
   .shell { width: min(100% - 20px,1160px); margin-top: 12px; }
-  .playerFrame { border-radius: 13px; }
-  .playButton { width: 60px; height: 60px; font-size: 21px; }
-  .loadingOverlay { gap: 8px; padding: 0 10px 10px; }
-  .loadingText { max-width: 96%; font-size: 10px; }
+  .gatewayPlayerShell { border-radius: 13px; }
   .watchInfo { padding-top: 18px; }
   .title { font-size: clamp(25px,8vw,36px); }
   .description { font-size: 10.5px; }

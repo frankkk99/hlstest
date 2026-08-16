@@ -1,51 +1,51 @@
 import Link from "next/link";
 import styles from "./source-select.module.css";
 
-const sources = [
+const sections = [
   {
     href: "/avdb",
-    badge: "AVDBAPI / PRE-IMPORT",
-    title: "AVDB INDEX",
-    description: "ประสบการณ์แบบฐานข้อมูลและ index เน้นรหัส เมทาดาทา และสถานะ Player ตอนนี้อยู่โหมดเตรียมระบบและยังไม่ดึงข้อมูลอัตโนมัติ",
-    action: "เปิด AVDB Index",
+    badge: "CATALOG / AVDB",
+    title: "PLAYER GATEWAY",
+    description: "Player กลางของ dev2u.online ใช้ session, verified HLS, Direct Upload18, prewarm และ Browser Session fallback ชุดเดียวกัน หน้า Watch และ iframe จึงไม่ต้องมี resolver แยกกันอีก",
+    action: "เปิด AVDB Catalog",
   },
   {
-    href: "/hub",
-    badge: "MISSAV / LIVE",
-    title: "MISSAV CINEMA",
-    description: "ประสบการณ์แบบเว็บหนัง เน้น Hero, การค้นหา, การ์ดภาพยนตร์ และการรับชมจาก catalog MISSAV ที่ผ่าน Player health แล้ว",
-    action: "เปิด MISSAV Cinema",
+    href: "/admin",
+    badge: "CONTROL / ADMIN",
+    title: "GATEWAY OPS",
+    description: "จัดการ Catalog, HTML Import, Player Health และ Publish จากหลังบ้านเดิม โดยไม่กระทบ MISSAV หรือเครื่องมือเดิมที่ยังอยู่ในระบบ",
+    action: "เปิด Control Room",
   },
 ];
 
-export default function SourceSelectorPage() {
+export default function PlayerGatewayHomePage() {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
         <header className={styles.header}>
-          <Link href="/" className={styles.brand}>HLS<span>HUB</span></Link>
+          <Link href="/" className={styles.brand}>PLAYER<span>GATEWAY</span></Link>
           <Link href="/hls-test" className={styles.toolLink}>HLS Diagnostic</Link>
         </header>
 
         <section className={styles.hero}>
-          <p className={styles.kicker}>CHOOSE CONTENT EXPERIENCE</p>
-          <h1 className={styles.title}>เลือกแหล่งข้อมูลก่อนเข้าหน้าเว็บ</h1>
+          <p className={styles.kicker}>DEV2U.ONLINE / PLAYER INFRASTRUCTURE</p>
+          <h1 className={styles.title}>Player กลางสำหรับทุกเว็บ</h1>
           <p className={styles.subtitle}>
-            ทั้งสองแหล่งแยกข้อมูล, UX และระบบหลังบ้านออกจากกัน ไม่ใช้ catalog หรือ import pipeline ร่วมกัน
+            ใช้ <strong>/player/[id]</strong> สำหรับหน้า Player และ <strong>/embed/[id]</strong> สำหรับ iframe เว็บภายนอก โดย Playback จริงยังผ่าน session/proxy ของ Gateway และไม่ส่ง HLS ต้นทางให้เว็บลูกค้าโดยตรง
           </p>
         </section>
 
-        <section className={styles.grid} aria-label="เลือกแหล่งข้อมูล">
-          {sources.map((source) => (
-            <Link key={source.href} href={source.href} className={styles.card}>
+        <section className={styles.grid} aria-label="Player Gateway">
+          {sections.map((section) => (
+            <Link key={section.href} href={section.href} className={styles.card}>
               <span className={styles.cardGlow} />
               <div className={styles.cardTop}>
-                <span className={styles.badge}>{source.badge}</span>
-                <h2>{source.title}</h2>
-                <p>{source.description}</p>
+                <span className={styles.badge}>{section.badge}</span>
+                <h2>{section.title}</h2>
+                <p>{section.description}</p>
               </div>
               <div className={styles.cardBottom}>
-                <span>{source.action}</span>
+                <span>{section.action}</span>
                 <span className={styles.arrow}>→</span>
               </div>
             </Link>
@@ -53,7 +53,7 @@ export default function SourceSelectorPage() {
         </section>
 
         <p className={styles.note}>
-          AVDBAPI ยังอยู่ PRE-IMPORT ส่วน MISSAV เป็น LIVE catalog การเข้าหน้า AVDB ไม่เริ่ม scan ต้นทางอัตโนมัติ
+          Gateway API: POST /api/player/session · body: catalogId + forceFresh. AVDB Watch, /player และ /embed ใช้ Player Core กลางตัวเดียวกัน
         </p>
       </div>
     </main>

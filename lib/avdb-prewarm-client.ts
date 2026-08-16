@@ -76,7 +76,7 @@ export function getPreparedAvdbPlayback(catalogId: string, marginMs = MIN_FRESH_
 export async function requestAvdbPlaybackSession(catalogId: string, forceFresh = false) {
   if (forceFresh) clearPreparedAvdbPlayback(catalogId);
 
-  const response = await fetch("/api/avdb/playback/session", {
+  const response = await fetch("/api/player/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ catalogId, forceFresh }),
