@@ -56,6 +56,13 @@ function normalizeKey(value: unknown) {
     .slice(0, 180);
 }
 
+function normalizeIds(idsRaw: unknown) {
+  return [...new Set((Array.isArray(idsRaw) ? idsRaw : [])
+    .map((value) => String(value ?? "").trim())
+    .filter((value) => /^\d{1,12}$/.test(value)))]
+    .slice(0, MAX_IDS_PER_REQUEST);
+}
+
 function dedupeKey(item: DetailItem) {
   const code = normalizeKey(item.movieCode);
   if (code) return `code:${code}`;
@@ -197,6 +204,52 @@ async function loadExisting(db: SupabaseClient, items: DetailItem[]) {
   return { byExternalId, byKey };
 }
 
+function publicPreviewItem(item: DetailItem, existing: ExistingRow | undefined) {
+  return {
+    id: item.id,
+    movieCode: item.movieCode,
+    title: item.name,
+    originalTitle: item.originalName,
+    year: item.year,
+    quality: item.quality,
+    duration: item.duration,
+    description: item.description,
+    thumbUrl: item.thumbUrl || item.posterUrl,
+    posterUrl: item.posterUrl || item.thumbUrl,
+    playerProvider: item.playerProvider,
+    hasPlayer: Boolean(item.playerUrl),
+    saved: Boolean(existing),
+    stageItemId: existing?.id || null,
+    stageStatus: existing?.stage_status || null,
+    playerStatus: existing?.player_status || null,
+  };
+}
+
+export async function previewAvdbIdsFromHtml(idsRaw: unknown) {
+  const ids = normalizeIds(idsRaw);
+  if (!ids.length) throw new Error("ไม่พบ AVDB ID ที่ถูกต้อง");
+  const fetched = await fetchDetails(ids);
+  const existing = fetched.items.length ? await loadExisting(getDb(), fetched.items) : { byExternalId: new Map<string, ExistingRow>(), byKey: new Map<string, ExistingRow>() };
+  return {
+    requested: ids.length,
+    fetched: fetched.items.length,
+    failed: fetched.errors.length,
+    errors: fetched.errors,
+    items: fetched.items.map((item) => {
+      const row = existing.byExternalId.get(item.id) || existing.byKey.get(dedupeKey(item));
+      return publicPreviewItem(item, row);
+    }),
+  };
+}
+
+export async function fetchAvdbHtmlDetailForTest(idRaw: unknown) {
+  const id = normalizeIds([idRaw])[0];
+  if (!id) throw new Error("ไม่พบ AVDB ID ที่ถูกต้อง");
+  const result = await fetchDetail(id);
+  if (!result.ok) throw new Error(result.error);
+  return result.item;
+}
+
 function stagePayload(item: DetailItem, sourceName: string, sourcePage: number | null) {
   return {
     run_id: null,
@@ -232,6 +285,7 @@ async function stageItems(items: DetailItem[], sourceName: string, sourcePage: n
   const seenExternalIds = new Set<string>();
   const seenKeys = new Set<string>();
   let duplicates = 0;
+  let inserted = 0;
 
   for (const item of items) {
     const payload = stagePayload(item, sourceName, sourcePage);
@@ -251,6 +305,7 @@ async function stageItems(items: DetailItem[], sourceName: string, sourcePage: n
       duplicates += 1;
       inserts.push({ ...payload, stage_status: "duplicate", duplicate_of: keyMatch?.id || null, player_status: "unverified" });
     } else {
+      inserted += 1;
       inserts.push({ ...payload, stage_status: "staged", duplicate_of: null, player_status: "unverified" });
       seenKeys.add(key);
     }
@@ -274,19 +329,16 @@ async function stageItems(items: DetailItem[], sourceName: string, sourcePage: n
     run_id: null,
     level: "success",
     step: "html-import",
-    message: `นำเข้า ${sourceName}: API ${items.length} · ใหม่ ${inserts.length} · อัปเดต ${updated} · ซ้ำ ${duplicates}`,
-    context: { sourceName, sourcePage, items: items.length, inserted: inserts.length, updated, duplicates },
+    message: `นำเข้า ${sourceName}: API ${items.length} · ใหม่ ${inserted} · อัปเดต ${updated} · ซ้ำ ${duplicates}`,
+    context: { sourceName, sourcePage, items: items.length, inserted, updated, duplicates },
   });
   if (log.error) throw new Error(log.error.message);
 
-  return { inserted: inserts.length, updated, duplicates };
+  return { inserted, updated, duplicates };
 }
 
 async function executeImport(idsRaw: unknown, sourceNameRaw: unknown, sourcePageRaw: unknown) {
-  const ids = [...new Set((Array.isArray(idsRaw) ? idsRaw : [])
-    .map((value) => String(value ?? "").trim())
-    .filter((value) => /^\d{1,12}$/.test(value)))]
-    .slice(0, MAX_IDS_PER_REQUEST);
+  const ids = normalizeIds(idsRaw);
   if (!ids.length) throw new Error("ไม่พบ AVDB ID ที่ถูกต้อง");
 
   const sourceName = String(sourceNameRaw || "pasted-source").replace(/[\r\n<>]/g, " ").trim().slice(0, 120) || "pasted-source";
@@ -294,6 +346,7 @@ async function executeImport(idsRaw: unknown, sourceNameRaw: unknown, sourcePage
   const sourcePage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : null;
   const fetched = await fetchDetails(ids);
   const staged = await stageItems(fetched.items, sourceName, sourcePage);
+  const existing = fetched.items.length ? await loadExisting(getDb(), fetched.items) : { byExternalId: new Map<string, ExistingRow>(), byKey: new Map<string, ExistingRow>() };
 
   return {
     requested: ids.length,
@@ -301,15 +354,10 @@ async function executeImport(idsRaw: unknown, sourceNameRaw: unknown, sourcePage
     failed: fetched.errors.length,
     ...staged,
     errors: fetched.errors,
-    items: fetched.items.map((item) => ({
-      id: item.id,
-      movieCode: item.movieCode,
-      title: item.name,
-      quality: item.quality,
-      duration: item.duration,
-      thumbUrl: item.thumbUrl || item.posterUrl,
-      playerProvider: item.playerProvider,
-    })),
+    items: fetched.items.map((item) => {
+      const row = existing.byExternalId.get(item.id) || existing.byKey.get(dedupeKey(item));
+      return publicPreviewItem(item, row);
+    }),
   };
 }
 
