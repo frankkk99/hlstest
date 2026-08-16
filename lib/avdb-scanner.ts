@@ -1,5 +1,5 @@
 import chromium from "@sparticuz/chromium";
-import puppeteer, { type Page } from "puppeteer-core";
+import puppeteer, { type HTTPResponse, type Page } from "puppeteer-core";
 import { getServerlessChromiumExecutable } from "@/lib/serverless-chromium";
 
 const UA =
@@ -160,6 +160,55 @@ async function extractDomApiLinks(page: Page, pageUrl: string) {
   }, pageUrl);
 }
 
+async function navigateAvdbPage(page: Page, targetUrl: string): Promise<HTTPResponse | null> {
+  const target = new URL(targetUrl);
+  if (target.pathname === "/" || target.pathname === "") {
+    return page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+  }
+
+  // AVDB currently exposes numbered pagination links on the index page. Warm
+  // the same browser context on the homepage first, then follow the normal
+  // pagination anchor so cookies/referrer/navigation state match a user click.
+  const home = await page.goto("https://avdbapi.com/", { waitUntil: "domcontentloaded", timeout: 25000 });
+  if ((home?.status() ?? 0) >= 400) return home;
+  await new Promise((resolve) => setTimeout(resolve, 900));
+
+  const targetPath = target.pathname.endsWith("/") ? target.pathname : `${target.pathname}/`;
+  const href = await page.evaluate((pathname: string) => {
+    for (const anchor of Array.from(document.querySelectorAll("a[href]"))) {
+      try {
+        const url = new URL((anchor as HTMLAnchorElement).href, window.location.href);
+        const path = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
+        if (path === pathname) return url.toString();
+      } catch {
+        // Ignore malformed pagination links.
+      }
+    }
+    return "";
+  }, targetPath);
+
+  if (!href || !allowedAvdbUrl(href)) {
+    return page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+  }
+
+  const navigation = page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 25000 });
+  const clicked = await page.evaluate((absoluteHref: string) => {
+    const anchor = Array.from(document.querySelectorAll("a[href]")).find((element) => {
+      try {
+        return new URL((element as HTMLAnchorElement).href, window.location.href).toString() === absoluteHref;
+      } catch {
+        return false;
+      }
+    }) as HTMLAnchorElement | undefined;
+    if (!anchor) return false;
+    anchor.click();
+    return true;
+  }, href);
+
+  if (!clicked) return page.goto(href, { waitUntil: "domcontentloaded", timeout: 25000 });
+  return navigation;
+}
+
 function getPlayerUrl(item: any): string | null {
   const serverData = item?.episodes?.server_data;
   if (!serverData || typeof serverData !== "object") return null;
@@ -272,7 +321,7 @@ export async function scanAvdbPage(pageUrl: string, options: { apiConcurrency?: 
     page.setDefaultNavigationTimeout(25000);
     page.setDefaultTimeout(10000);
 
-    const nav = await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 25000 });
+    const nav = await navigateAvdbPage(page, pageUrl);
     const pageStatus = nav?.status() ?? 0;
     await new Promise((resolve) => setTimeout(resolve, 1800));
 
