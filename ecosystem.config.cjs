@@ -1,3 +1,7 @@
+const { loadEnvConfig } = require("@next/env");
+
+loadEnvConfig(__dirname, false);
+
 module.exports = {
   apps: [
     {
@@ -13,6 +17,7 @@ module.exports = {
       kill_timeout: 15000,
       listen_timeout: 15000,
       env: {
+        ...process.env,
         NODE_ENV: "production",
         HOSTNAME: "127.0.0.1",
         PORT: "3000"
