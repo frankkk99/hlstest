@@ -2,6 +2,7 @@
 const frameAncestors = process.env.PLAYER_GATEWAY_FRAME_ANCESTORS?.trim() || "*";
 
 const nextConfig = {
+  output: "standalone",
   outputFileTracingIncludes: {
     "/api/avdb-scan": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/browser-session": ["./node_modules/@sparticuz/chromium/bin/**"],
