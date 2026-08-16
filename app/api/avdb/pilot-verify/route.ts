@@ -52,7 +52,10 @@ export async function GET(request: NextRequest) {
   if (consume.error) return NextResponse.json({ ok: false, error: "cannot consume pilot token" }, { status: 500 });
 
   try {
-    const result = await verifyNextAvdbPlayer({ origin: request.nextUrl.origin, runId, includeFailed: false });
+    // The preview runner only controls the pilot. Playback verification itself
+    // is executed against the public production origin so Vercel Preview
+    // Protection cannot intercept the internal Browser Session request.
+    const result = await verifyNextAvdbPlayer({ origin: "https://hlstest.vercel.app", runId, includeFailed: false });
     const checked = result.result;
     return NextResponse.json({
       ok: true,
