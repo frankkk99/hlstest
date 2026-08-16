@@ -10,11 +10,29 @@ import { WatchSkeleton } from "../../skeletons";
 import { displayTitle, durationLabel, imageUrl, yearLabel, type StorefrontDetail, type StorefrontItem } from "../../storefront";
 
 type DetailResponse = { ok: boolean; error?: string; item?: StorefrontDetail };
-type SessionResponse = { ok: boolean; error?: string; session?: { sessionId: string; mediaUrl: string; proxyUrl?: string | null; expiresAt: number } };
+type PlaybackSession = { sessionId: string; mediaUrl: string; proxyUrl?: string | null; expiresAt: number };
+type SessionResponse = { ok: boolean; error?: string; session?: PlaybackSession };
 
 function videoLoadingMessage(durationSeconds: number | null | undefined) {
   const duration = durationSeconds && durationSeconds > 0 ? ` (ความยาว ${durationLabel(durationSeconds)})` : "";
   return `กำลังโหลดวิดีโอ${duration} อาจใช้เวลาสักครู่ ขึ้นอยู่กับความเร็วอินเทอร์เน็ต`;
+}
+
+async function requestPlaybackSession(item: StorefrontDetail, forceFresh = false) {
+  const response = await fetch("/api/browser-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      pageUrl: item.playerPageUrl,
+      mediaUrl: item.mediaUrl || undefined,
+      origin: item.origin || undefined,
+      referer: item.referer || undefined,
+      forceFresh,
+    }),
+  });
+  const data = (await response.json()) as SessionResponse;
+  if (!response.ok || !data.ok || !data.session) throw new Error(data.error || "ยังเปิดวิดีโอไม่ได้");
+  return data.session;
 }
 
 export default function StorefrontWatchPage() {
@@ -30,6 +48,9 @@ export default function StorefrontWatchPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const playbackRunRef = useRef(0);
+  const preparedSessionRef = useRef<PlaybackSession | null>(null);
+  const prewarmPromiseRef = useRef<Promise<PlaybackSession | null> | null>(null);
+  const hlsModulePromiseRef = useRef<Promise<typeof import("hls.js")> | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -55,6 +76,36 @@ export default function StorefrontWatchPage() {
     return () => { active = false; };
   }, [id]);
 
+  useEffect(() => {
+    if (!item?.playerPageUrl) return;
+    let active = true;
+    preparedSessionRef.current = null;
+
+    // Load the HLS runtime while the user is reading the watch page instead of
+    // waiting for the play click to start downloading/parsing the module.
+    hlsModulePromiseRef.current ??= import("hls.js");
+
+    // A watch-page visit is a strong playback intent. Prepare the Chromium
+    // session in parallel with rendering so the play click can usually reuse
+    // the already validated/cached session immediately.
+    const promise = requestPlaybackSession(item)
+      .then((session) => {
+        if (active) preparedSessionRef.current = session;
+        return active ? session : null;
+      })
+      .catch(() => null)
+      .finally(() => {
+        if (prewarmPromiseRef.current === promise) prewarmPromiseRef.current = null;
+      });
+    prewarmPromiseRef.current = promise;
+
+    return () => {
+      active = false;
+      if (prewarmPromiseRef.current === promise) prewarmPromiseRef.current = null;
+      preparedSessionRef.current = null;
+    };
+  }, [item]);
+
   useEffect(() => () => {
     playbackRunRef.current += 1;
     hlsRef.current?.destroy();
@@ -76,18 +127,21 @@ export default function StorefrontWatchPage() {
     stopVideo();
     setMessage(attempt ? "กำลังลองเชื่อมต่อให้อีกครั้ง..." : videoLoadingMessage(item.durationSeconds));
     try {
-      const response = await fetch("/api/browser-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageUrl: item.playerPageUrl, mediaUrl: item.mediaUrl || undefined, origin: item.origin || undefined, referer: item.referer || undefined }),
-      });
-      const data = (await response.json()) as SessionResponse;
-      if (!response.ok || !data.ok || !data.session) throw new Error(data.error || "ยังเปิดวิดีโอไม่ได้");
-      const sessionUrl = `/api/browser-session?session=${encodeURIComponent(data.session.sessionId)}&url=${encodeURIComponent(data.session.mediaUrl)}`;
+      let session: PlaybackSession | null = null;
+      if (attempt === 0) {
+        const prepared = preparedSessionRef.current;
+        if (prepared && prepared.expiresAt > Date.now() + 5000) session = prepared;
+        else if (prewarmPromiseRef.current) session = await prewarmPromiseRef.current;
+      }
+      session ??= await requestPlaybackSession(item, attempt > 0);
+      preparedSessionRef.current = session;
+
+      const sessionUrl = `/api/browser-session?session=${encodeURIComponent(session.sessionId)}&url=${encodeURIComponent(session.mediaUrl)}`;
       const video = videoRef.current;
       if (!video) throw new Error("ไม่พบเครื่องเล่นวิดีโอ");
       const retry = () => {
         if (playbackRunRef.current !== run) return;
+        preparedSessionRef.current = null;
         if (attempt < 1) void startPlayback(attempt + 1);
         else setMessage("วิดีโอเรื่องนี้ยังไม่พร้อม ลองใหม่อีกครั้งภายหลัง");
       };
@@ -99,17 +153,18 @@ export default function StorefrontWatchPage() {
         await video.play().catch(() => undefined);
         setMessage("พร้อมรับชม");
       } else {
-        const hlsModule = await import("hls.js");
+        const hlsModule = await (hlsModulePromiseRef.current ??= import("hls.js"));
         const HlsPlayer = hlsModule.default;
         if (!HlsPlayer.isSupported()) throw new Error("อุปกรณ์นี้ยังไม่รองรับการเล่นวิดีโอ");
         const hls = new HlsPlayer({ enableWorker: true, maxBufferLength: 20, capLevelToPlayerSize: true, startLevel: -1 });
         hlsRef.current = hls;
         hls.on(HlsPlayer.Events.ERROR, (_event, details) => { if (details.fatal) retry(); });
         hls.on(HlsPlayer.Events.MANIFEST_PARSED, () => { setMessage("พร้อมรับชม"); void video.play().catch(() => undefined); });
-        hls.loadSource(sessionUrl);
         hls.attachMedia(video);
+        hls.loadSource(sessionUrl);
       }
     } catch (error) {
+      preparedSessionRef.current = null;
       if (attempt < 1) { void startPlayback(attempt + 1); return; }
       setPlayRequested(false);
       setMessage(error instanceof Error ? error.message : "ยังเปิดวิดีโอไม่ได้");
