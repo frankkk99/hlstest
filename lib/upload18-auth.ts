@@ -19,14 +19,28 @@ function isUpload18Url(raw: string) {
   }
 }
 
+function isUpload18LoginUrl(raw: string) {
+  try {
+    const url = new URL(raw);
+    return isUpload18Url(raw) && /^\/login(?:\/|$)/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function isUpload18LoginPage(page: Page) {
   if (!isUpload18Url(page.url())) return false;
+  if (isUpload18LoginUrl(page.url())) return true;
   return page.evaluate(() => {
     const title = document.title.toLowerCase();
     const hasPassword = Boolean(document.querySelector('input[type="password"]'));
     const hasUser = Boolean(document.querySelector('input[type="text"],input[name*=user i],input[name*=email i]'));
     return title.includes("login") && hasPassword && hasUser;
   }).catch(() => false);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function submitLogin(page: Page, username: string, password: string) {
@@ -79,19 +93,27 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
   }
 
   const loginNavigation = await submitLogin(page, username, password);
-  await new Promise((resolve) => setTimeout(resolve, 900));
+  // Upload18 can briefly leave /login and then redirect back after its session
+  // check. Wait long enough for that client/server redirect to settle before
+  // treating the login as successful.
+  await sleep(2500);
   if (await isUpload18LoginPage(page)) {
     return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
   }
 
+  let targetStatus = loginNavigation?.status();
   if (page.url() !== targetUrl) {
     const targetNavigation = await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    if (await isUpload18LoginPage(page)) {
-      return { handled: true, authenticated: false, reason: "session-not-persisted", pageStatus: targetNavigation?.status() };
-    }
-    return { handled: true, authenticated: true, pageStatus: targetNavigation?.status() };
+    targetStatus = targetNavigation?.status();
   }
 
-  return { handled: true, authenticated: true, pageStatus: loginNavigation?.status() };
+  // Verify the authenticated session survives a fresh request to the original
+  // Player URL. This prevents a late redirect back to /login from being
+  // misclassified as a Player/HLS failure.
+  await sleep(2500);
+  if (await isUpload18LoginPage(page)) {
+    return { handled: true, authenticated: false, reason: "session-not-persisted", pageStatus: targetStatus };
+  }
+
+  return { handled: true, authenticated: true, pageStatus: targetStatus };
 }
