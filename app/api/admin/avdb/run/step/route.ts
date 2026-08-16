@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-api";
-import { fetchAvdbAdminState, isAvdbStagingConfigured } from "@/lib/avdb-staging";
+import { runAvdbCrawlerStep } from "@/lib/avdb-runner";
+import { isAvdbStagingConfigured } from "@/lib/avdb-staging";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
   if (!(await isAdminRequest(request))) {
     return NextResponse.json({ ok: false, error: "ต้องเข้าสู่ระบบแอดมิน" }, { status: 401 });
   }
@@ -14,14 +16,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = await fetchAvdbAdminState();
-    return NextResponse.json(
-      { ok: true, ...state, crawlerConnected: true },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    const body = await request.json();
+    const result = await runAvdbCrawlerStep(body?.runId);
+    return NextResponse.json(result, { status: result.ok ? 200 : 422 });
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "อ่านสถานะ AVDB ไม่สำเร็จ" },
+      { ok: false, error: error instanceof Error ? error.message : "AVDB crawler step ไม่สำเร็จ" },
       { status: 500 },
     );
   }

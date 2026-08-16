@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         run,
-        crawlerConnected: false,
-        message: "สร้าง AVDB run แล้ว แต่ยังไม่เริ่มอ่านต้นทางจนกว่าจะเชื่อม crawler",
+        crawlerConnected: true,
+        message: `สร้าง Run หน้า ${run.start_page}-${run.end_page} แล้ว Crawler จะเริ่มจากหน้า ${run.current_page}`,
       });
     }
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       lastError: body?.lastError,
     });
 
-    return NextResponse.json({ ok: true, run, crawlerConnected: false });
+    return NextResponse.json({ ok: true, run, crawlerConnected: true });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "ควบคุม AVDB run ไม่สำเร็จ" },
