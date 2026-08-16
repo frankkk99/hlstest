@@ -19,6 +19,7 @@ export default function ToolNav() {
     pathname.startsWith("/avdb") ||
     pathname === "/embed" ||
     pathname.startsWith("/embed/") ||
+    pathname.startsWith("/player/") ||
     pathname === "/admin" ||
     pathname.startsWith("/admin/")
   ) return null;
