@@ -37,6 +37,8 @@ type DetailResponse = { ok: boolean; error?: string; item?: CatalogItem };
 type CatalogResponse = { ok: boolean; items?: CatalogItem[] };
 type PlaybackSession = AvdbPlaybackSession;
 
+const FIRST_FRAME_FADE_MS = 420;
+
 function videoLoadingMessage(duration: string | null | undefined) {
   const value = duration?.trim();
   const durationLabel = value ? ` (ความยาว ${value})` : "";
@@ -76,10 +78,13 @@ export default function AvdbWatchPage() {
   const [starting, setStarting] = useState(false);
   const [started, setStarted] = useState(false);
   const [requested, setRequested] = useState(false);
+  const [firstFrameReady, setFirstFrameReady] = useState(false);
   const [message, setMessage] = useState("กดปุ่มเล่นเพื่อเริ่มรับชม");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const runRef = useRef(0);
+  const frameTransitionRef = useRef(0);
+  const frameRequestPendingRef = useRef(false);
   const preparedSessionRef = useRef<PlaybackSession | null>(null);
   const prewarmPromiseRef = useRef<Promise<PlaybackSession | null> | null>(null);
   const hlsModuleRef = useRef<Promise<typeof import("hls.js")> | null>(null);
@@ -133,9 +138,43 @@ export default function AvdbWatchPage() {
 
   useEffect(() => () => {
     runRef.current += 1;
+    frameTransitionRef.current += 1;
     hlsRef.current?.destroy();
     hlsRef.current = null;
   }, []);
+
+  function resetFirstFrameTransition() {
+    frameTransitionRef.current += 1;
+    frameRequestPendingRef.current = false;
+    setFirstFrameReady(false);
+  }
+
+  function revealFirstVideoFrame() {
+    const video = videoRef.current;
+    if (!video || frameRequestPendingRef.current) return;
+
+    frameRequestPendingRef.current = true;
+    const transitionToken = frameTransitionRef.current;
+    const finish = () => {
+      if (transitionToken !== frameTransitionRef.current) return;
+      setFirstFrameReady(true);
+      setStarting(false);
+      setMessage("กำลังรับชม");
+      window.setTimeout(() => {
+        if (transitionToken !== frameTransitionRef.current) return;
+        setStarted(true);
+      }, FIRST_FRAME_FADE_MS);
+    };
+
+    if (typeof video.requestVideoFrameCallback === "function") {
+      video.requestVideoFrameCallback(() => finish());
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(finish);
+    });
+  }
 
   function stopVideo() {
     hlsRef.current?.destroy();
@@ -150,6 +189,7 @@ export default function AvdbWatchPage() {
   async function startPlayback(attempt = 0) {
     if (!item || (starting && attempt === 0)) return;
     const run = ++runRef.current;
+    resetFirstFrameTransition();
     setRequested(true);
     setStarted(false);
     setStarting(true);
@@ -176,6 +216,7 @@ export default function AvdbWatchPage() {
         clearPreparedAvdbPlayback(item.id);
         if (attempt < 1) void startPlayback(attempt + 1);
         else {
+          resetFirstFrameTransition();
           setStarting(false);
           setRequested(false);
           setMessage("วิดีโอเรื่องนี้ยังไม่พร้อม ลองใหม่อีกครั้งภายหลัง");
@@ -187,7 +228,7 @@ export default function AvdbWatchPage() {
         video.src = session.playbackUrl;
         video.load();
         await video.play().catch(() => undefined);
-        setMessage("พร้อมรับชม");
+        setMessage("กำลังเตรียมภาพวิดีโอ...");
       } else {
         const hlsModule = await (hlsModuleRef.current ??= import("hls.js"));
         const HlsPlayer = hlsModule.default;
@@ -196,7 +237,7 @@ export default function AvdbWatchPage() {
         hlsRef.current = hls;
         hls.on(HlsPlayer.Events.ERROR, (_event, details) => { if (details.fatal) retry(); });
         hls.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
-          setMessage("พร้อมรับชม");
+          setMessage("กำลังเตรียมภาพวิดีโอ...");
           void video.play().catch(() => undefined);
         });
         hls.attachMedia(video);
@@ -209,10 +250,11 @@ export default function AvdbWatchPage() {
         void startPlayback(attempt + 1);
         return;
       }
+      resetFirstFrameTransition();
       setRequested(false);
       setMessage(error instanceof Error ? error.message : "ยังเปิดวิดีโอไม่ได้");
     } finally {
-      if (runRef.current === run) setStarting(false);
+      if (runRef.current === run && !frameRequestPendingRef.current) setStarting(false);
     }
   }
 
@@ -223,6 +265,7 @@ export default function AvdbWatchPage() {
   const poster = item.thumb_url || item.poster_url || "";
   const code = item.movie_code || item.external_id || "AVDB";
   const loadingMessage = videoLoadingMessage(item.duration);
+  const waitingForFirstFrame = requested && !started;
 
   return (
     <main className={styles.page}>
@@ -236,14 +279,15 @@ export default function AvdbWatchPage() {
         <section className={styles.playerFrame}>
           <video
             ref={videoRef}
+            className={`${styles.videoSurface} ${requested && poster && !firstFrameReady ? styles.videoWaiting : styles.videoReady}`}
             controls
             playsInline
             poster={poster || undefined}
-            onPlay={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
-            onPlaying={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
+            onPlay={() => { setMessage("กำลังเตรียมภาพวิดีโอ..."); }}
+            onPlaying={revealFirstVideoFrame}
           />
-          {requested && !started && poster ? (
-            <div className={styles.loadingPoster} aria-hidden="true">
+          {waitingForFirstFrame && poster ? (
+            <div className={`${styles.loadingPoster} ${firstFrameReady ? styles.loadingPosterFade : ""}`} aria-hidden="true">
               <img src={poster} alt="" />
             </div>
           ) : null}
@@ -253,8 +297,8 @@ export default function AvdbWatchPage() {
               <button className={styles.playButton} type="button" onClick={() => void startPlayback()} aria-label="เริ่มรับชม">▶</button>
             </div>
           ) : null}
-          {requested && !started ? (
-            <div className={styles.loadingOverlay} role="status" aria-live="polite">
+          {waitingForFirstFrame ? (
+            <div className={`${styles.loadingOverlay} ${firstFrameReady ? styles.loadingOverlayFade : ""}`} role="status" aria-live="polite">
               <span className={styles.loadingText}>{loadingMessage}</span>
               <div className={styles.progressTrack} aria-label="กำลังโหลดวิดีโอ"><span className={styles.progressBar} /></div>
             </div>
