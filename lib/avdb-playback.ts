@@ -23,6 +23,8 @@ export type AvdbPlaybackSource = {
   stageItemId: string;
   playerPageUrl: string;
   playerProvider: string | null;
+  verifiedMediaUrl: string | null;
+  playerCheckedAt: string | null;
 };
 
 type CatalogPlaybackRow = AvdbPublicDetail & {
@@ -38,6 +40,8 @@ type StagePlaybackRow = {
   player_provider: string | null;
   player_status: string;
   stage_status: string;
+  verified_media_url: string | null;
+  player_checked_at: string | null;
 };
 
 let client: SupabaseClient | null | undefined;
@@ -88,10 +92,6 @@ export async function fetchAvdbPlaybackSource(idValue: unknown): Promise<AvdbPla
   const id = cleanId(idValue);
   if (!id) throw new Error("ไม่พบรหัส AVDB");
 
-  // AVDB follows the same playback principle as MISSAV: the public catalog
-  // stores metadata + the source page reference. A fresh Browser Session is
-  // created when the user watches; a previously verified/signed HLS URL is not
-  // required because it may already be stale by playback time.
   const catalogResponse = await db()
     .from("avdb_catalog_items")
     .select(`${PUBLIC_FIELDS},source,is_active,player_page_url`)
@@ -106,7 +106,7 @@ export async function fetchAvdbPlaybackSource(idValue: unknown): Promise<AvdbPla
   const catalog = catalogResponse.data as CatalogPlaybackRow;
   const stageResponse = await db()
     .from("avdb_stage_items")
-    .select("id,source,player_page_url,player_provider,player_status,stage_status")
+    .select("id,source,player_page_url,player_provider,player_status,stage_status,verified_media_url,player_checked_at")
     .eq("id", catalog.stage_item_id)
     .eq("source", "avdbapi")
     .maybeSingle();
@@ -127,5 +127,7 @@ export async function fetchAvdbPlaybackSource(idValue: unknown): Promise<AvdbPla
     stageItemId: stage.id,
     playerPageUrl,
     playerProvider: stage.player_provider || catalog.player_provider || null,
+    verifiedMediaUrl: String(stage.verified_media_url || "").trim() || null,
+    playerCheckedAt: stage.player_checked_at || null,
   };
 }
