@@ -29,6 +29,12 @@ type CatalogResponse = { ok: boolean; items?: CatalogItem[] };
 type PlaybackSession = { playbackUrl: string; expiresAt: number; provider: string | null };
 type SessionResponse = { ok: boolean; error?: string; failureType?: string; session?: PlaybackSession };
 
+function videoLoadingMessage(duration: string | null | undefined) {
+  const value = duration?.trim();
+  const durationLabel = value ? ` (ความยาว ${value})` : "";
+  return `กำลังโหลดวิดีโอ${durationLabel} อาจใช้เวลาสักครู่ ขึ้นอยู่กับความเร็วอินเทอร์เน็ต`;
+}
+
 async function requestPlaybackSession(catalogId: string, forceFresh = false) {
   const response = await fetch("/api/avdb/playback/session", {
     method: "POST",
@@ -126,7 +132,7 @@ export default function AvdbWatchPage() {
     const run = ++runRef.current;
     setRequested(true);
     setStarting(true);
-    setMessage(attempt ? "กำลังลองเชื่อมต่ออีกครั้ง…" : "กำลังเตรียมวิดีโอ…");
+    setMessage(attempt ? "กำลังลองเชื่อมต่อให้อีกครั้ง..." : videoLoadingMessage(item.duration));
     stopVideo();
 
     try {
@@ -150,7 +156,7 @@ export default function AvdbWatchPage() {
         else {
           setStarting(false);
           setRequested(false);
-          setMessage("วิดีโอยังไม่พร้อม ลองใหม่อีกครั้งภายหลัง");
+          setMessage("วิดีโอเรื่องนี้ยังไม่พร้อม ลองใหม่อีกครั้งภายหลัง");
         }
       };
 
@@ -193,6 +199,7 @@ export default function AvdbWatchPage() {
 
   const poster = item.poster_url || item.thumb_url || "";
   const code = item.movie_code || item.external_id || "AVDB";
+  const loadingMessage = videoLoadingMessage(item.duration);
 
   return (
     <main className={styles.page}>
@@ -214,7 +221,12 @@ export default function AvdbWatchPage() {
           />
           {!requested && !started && !starting ? <div className={styles.posterShade} /> : null}
           {!requested && !started && !starting ? <button className={styles.playButton} type="button" onClick={() => void startPlayback()} aria-label="เริ่มรับชม">▶</button> : null}
-          {requested && !started ? <div className={styles.loadingOverlay}><div className={styles.progressTrack}><span className={styles.progressBar} /></div></div> : null}
+          {requested && !started ? (
+            <div className={styles.loadingOverlay} role="status" aria-live="polite">
+              <span className={styles.loadingText}>{loadingMessage}</span>
+              <div className={styles.progressTrack} aria-label="กำลังโหลดวิดีโอ"><span className={styles.progressBar} /></div>
+            </div>
+          ) : null}
         </section>
 
         <section className={styles.watchInfo}>
@@ -229,7 +241,7 @@ export default function AvdbWatchPage() {
             </div>
             {item.description ? <p className={styles.description}>{item.description}</p> : null}
           </div>
-          <p className={styles.playbackMessage}>{message}</p>
+          <p className={styles.playbackMessage}>{starting ? loadingMessage : message}</p>
         </section>
 
         {related.length ? (
