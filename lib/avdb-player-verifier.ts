@@ -6,7 +6,7 @@ export type AvdbPlayerVerificationResult = {
   movieCode: string | null;
   title: string;
   playerPageUrl: string | null;
-  playerStatus: "ready" | "failed";
+  playerStatus: "ready" | "failed" | "blocked";
   stageStatus: "player_ready" | "player_check";
   mediaUrl: string | null;
   failureType: string | null;
@@ -57,6 +57,10 @@ function enqueue<T>(operation: () => Promise<T>) {
   const result = verificationQueue.then(operation, operation);
   verificationQueue = result.then(() => undefined, () => undefined);
   return result;
+}
+
+function upload18CredentialsConfigured() {
+  return Boolean(String(process.env.UPLOAD18_USERNAME || "").trim() && String(process.env.UPLOAD18_PASSWORD || ""));
 }
 
 async function addLog(
@@ -154,6 +158,54 @@ async function markFailed(
   };
 }
 
+async function markBlocked(
+  db: SupabaseClient,
+  item: StageItemRow,
+  started: number,
+  failureType: string,
+  error: string,
+  diagnostics: Record<string, unknown> = {},
+): Promise<AvdbPlayerVerificationResult> {
+  const checkedAt = nowIso();
+  const response = await db
+    .from("avdb_stage_items")
+    .update({
+      player_status: "blocked",
+      stage_status: "player_check",
+      player_checked_at: checkedAt,
+      player_failure_type: failureType,
+      player_diagnostics: diagnostics,
+      last_error: error,
+      updated_at: checkedAt,
+    })
+    .eq("id", item.id);
+  if (response.error) throw new Error(response.error.message);
+
+  await addLog(
+    db,
+    item.run_id,
+    "warn",
+    `${item.movie_code || item.title || item.id} รอสิทธิ์ Player: ${error}`,
+    { itemId: item.id, failureType, provider: item.player_provider, diagnostics },
+  );
+  await refreshRunPlayerReady(db, item.run_id);
+
+  return {
+    ok: false,
+    itemId: item.id,
+    movieCode: item.movie_code,
+    title: item.title,
+    playerPageUrl: item.player_page_url,
+    playerStatus: "blocked",
+    stageStatus: "player_check",
+    mediaUrl: null,
+    failureType,
+    error,
+    diagnostics,
+    elapsedMs: Date.now() - started,
+  };
+}
+
 async function verifyItemInternal(input: {
   itemId: string;
   origin: string;
@@ -169,6 +221,19 @@ async function verifyItemInternal(input: {
   if (item.stage_status === "published") {
     throw new Error("รายการนี้ Publish แล้ว ไม่ควรเปลี่ยนสถานะจาก Player verifier");
   }
+  if (!item.player_page_url) {
+    return markFailed(db, item, started, "missing-player", "ไม่พบ player_page_url จาก AVDBAPI");
+  }
+  if (item.player_provider === "upload18.org" && !upload18CredentialsConfigured()) {
+    return markBlocked(
+      db,
+      item,
+      started,
+      "auth-required",
+      "Upload18 ต้องเข้าสู่ระบบก่อนตรวจ Player — ยังไม่ได้ตั้งค่า UPLOAD18_USERNAME / UPLOAD18_PASSWORD บน Server",
+      { provider: "upload18.org", authConfigured: false },
+    );
+  }
 
   const checkingAt = nowIso();
   const checkingResponse = await db
@@ -182,10 +247,6 @@ async function verifyItemInternal(input: {
     })
     .eq("id", item.id);
   if (checkingResponse.error) throw new Error(checkingResponse.error.message);
-
-  if (!item.player_page_url) {
-    return markFailed(db, item, started, "missing-player", "ไม่พบ player_page_url จาก AVDBAPI");
-  }
 
   let endpoint: URL;
   try {
@@ -294,7 +355,7 @@ export async function verifyNextAvdbPlayer(input: {
 }) {
   return enqueue(async () => {
     const db = getDb();
-    const statuses = input.includeFailed ? ["unverified", "failed"] : ["unverified"];
+    const statuses = input.includeFailed ? ["unverified", "failed", "blocked"] : ["unverified"];
     let query = db
       .from("avdb_stage_items")
       .select("id,movie_code,title,player_status,stage_status,updated_at")
