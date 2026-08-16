@@ -7,6 +7,7 @@ import styles from "./login.module.css";
 export default function AdminLoginPage() {
   const router = useRouter();
   const [nextPath, setNextPath] = useState("/admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,7 @@ export default function AdminLoginPage() {
       const response = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, next: nextPath }),
+        body: JSON.stringify({ username, password, next: nextPath }),
       });
       const data = (await response.json()) as { ok?: boolean; error?: string; next?: string };
       if (!response.ok || !data.ok) throw new Error(data.error || "เข้าสู่ระบบไม่สำเร็จ");
@@ -41,10 +42,31 @@ export default function AdminLoginPage() {
     <section className={styles.card}>
       <p className={styles.kicker}>HLSHUB ADMIN</p>
       <h1>เข้าสู่ระบบหลังบ้าน</h1>
-      <p className={styles.description}>หน้านี้สำหรับจัดการข้อมูลและตรวจสอบ Player เท่านั้น</p>
+      <p className={styles.description}>กรอกชื่อผู้ใช้และรหัสผ่านเพื่อจัดการข้อมูลและตรวจสอบ Player</p>
       <form onSubmit={submit}>
+        <label className={styles.label} htmlFor="username">ชื่อผู้ใช้</label>
+        <input
+          className={styles.input}
+          id="username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          autoFocus
+          required
+        />
         <label className={styles.label} htmlFor="password">รหัสผ่าน</label>
-        <input className={styles.input} id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoFocus required />
+        <input
+          className={styles.input}
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          required
+        />
         {error && <p className={styles.error} role="alert">{error}</p>}
         <button className={styles.button} type="submit" disabled={loading}>{loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ"}</button>
       </form>
