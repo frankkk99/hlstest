@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import AvdbHtmlImporter from "./avdb-html-importer";
 import AvdbMoreLoader from "./avdb-more-loader";
 import AvdbPlayerConsole from "./avdb-player-console";
 import AvdbPublishConsole from "./avdb-publish-console";
@@ -9,6 +10,7 @@ export default function AvdbAdminLayout({ children }: { children: ReactNode }) {
     <>
       <AvdbWorkerDriver />
       {children}
+      <AvdbHtmlImporter />
       <AvdbMoreLoader />
       <AvdbPublishConsole />
       <AvdbPlayerConsole />
