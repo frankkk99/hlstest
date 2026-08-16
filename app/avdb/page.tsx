@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SourceSwitcher from "../source-switcher";
 import styles from "./avdb.module.css";
 
 const slots = Array.from({ length: 8 }, (_, index) => index + 1);
@@ -10,9 +11,9 @@ export default function AvdbStorefrontPage() {
         <Link href="/avdb" className={styles.brand}>AVDB<span>INDEX</span></Link>
         <nav className={styles.nav} aria-label="เมนู AVDBAPI">
           <Link href="/avdb" className={styles.active}>INDEX</Link>
-          <Link href="/hub">MISSAV CINEMA</Link>
-          <Link href="/">CHANGE SOURCE</Link>
+          <Link href="/">SOURCE HOME</Link>
         </nav>
+        <SourceSwitcher current="avdb" />
       </header>
 
       <section className={styles.hero}>
