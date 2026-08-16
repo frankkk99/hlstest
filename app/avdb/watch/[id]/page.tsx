@@ -4,6 +4,13 @@ import type Hls from "hls.js";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import {
+  clearPreparedAvdbPlayback,
+  getPreparedAvdbPlayback,
+  prewarmAvdbPlayback,
+  requestAvdbPlaybackSession,
+  type AvdbPlaybackSession,
+} from "@/lib/avdb-prewarm-client";
 import SourceSwitcher from "../../../source-switcher";
 import ExpandableText from "../../expandable-text";
 import ui from "../../ui-polish.module.css";
@@ -28,25 +35,12 @@ type CatalogItem = {
 
 type DetailResponse = { ok: boolean; error?: string; item?: CatalogItem };
 type CatalogResponse = { ok: boolean; items?: CatalogItem[] };
-type PlaybackSession = { playbackUrl: string; expiresAt: number; provider: string | null };
-type SessionResponse = { ok: boolean; error?: string; failureType?: string; session?: PlaybackSession };
+type PlaybackSession = AvdbPlaybackSession;
 
 function videoLoadingMessage(duration: string | null | undefined) {
   const value = duration?.trim();
   const durationLabel = value ? ` (ความยาว ${value})` : "";
   return `กำลังโหลดวิดีโอ${durationLabel} อาจใช้เวลาสักครู่ ขึ้นอยู่กับความเร็วอินเทอร์เน็ต`;
-}
-
-async function requestPlaybackSession(catalogId: string, forceFresh = false) {
-  const response = await fetch("/api/avdb/playback/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ catalogId, forceFresh }),
-    cache: "no-store",
-  });
-  const payload = (await response.json()) as SessionResponse;
-  if (!response.ok || !payload.ok || !payload.session) throw new Error(payload.error || "ยังเปิดวิดีโอไม่ได้");
-  return payload.session;
 }
 
 function WatchSkeleton() {
@@ -116,12 +110,12 @@ export default function AvdbWatchPage() {
   useEffect(() => {
     if (!item?.id) return;
     let active = true;
-    preparedSessionRef.current = null;
+    preparedSessionRef.current = getPreparedAvdbPlayback(item.id, 5_000);
     hlsModuleRef.current ??= import("hls.js");
 
-    const promise = requestPlaybackSession(item.id)
+    const promise = prewarmAvdbPlayback(item.id)
       .then((session) => {
-        if (active) preparedSessionRef.current = session;
+        if (active && session) preparedSessionRef.current = session;
         return active ? session : null;
       })
       .catch(() => null)
@@ -164,11 +158,11 @@ export default function AvdbWatchPage() {
     try {
       let session: PlaybackSession | null = null;
       if (attempt === 0) {
-        const prepared = preparedSessionRef.current;
-        if (prepared && prepared.expiresAt > Date.now() + 5000) session = prepared;
+        const prepared = preparedSessionRef.current || getPreparedAvdbPlayback(item.id, 5_000);
+        if (prepared && prepared.expiresAt > Date.now() + 5_000) session = prepared;
         else if (prewarmPromiseRef.current) session = await prewarmPromiseRef.current;
       }
-      session ??= await requestPlaybackSession(item.id, attempt > 0);
+      session ??= await requestAvdbPlaybackSession(item.id, attempt > 0);
       if (runRef.current !== run) return;
       preparedSessionRef.current = session;
 
@@ -178,6 +172,7 @@ export default function AvdbWatchPage() {
       const retry = () => {
         if (runRef.current !== run) return;
         preparedSessionRef.current = null;
+        clearPreparedAvdbPlayback(item.id);
         if (attempt < 1) void startPlayback(attempt + 1);
         else {
           setStarting(false);
@@ -208,6 +203,7 @@ export default function AvdbWatchPage() {
       }
     } catch (error) {
       preparedSessionRef.current = null;
+      clearPreparedAvdbPlayback(item.id);
       if (attempt < 1) {
         void startPlayback(attempt + 1);
         return;
