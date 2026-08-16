@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./avdb-more-loader.module.css";
 
@@ -94,7 +95,10 @@ export default function AvdbMoreLoader() {
           <h2>ดึงหนัง AVDB เพิ่ม</h2>
           <span>ระบบเริ่มต่อจากหน้าสูงสุดที่มีใน Staging และใช้ dedupe/checkpoint เดิม</span>
         </div>
-        <button type="button" onClick={() => void refresh()} disabled={busy}>รีเฟรช</button>
+        <div className={styles.headActions}>
+          <Link href="/admin/avdb-html-import">HTML Import / ตรวจ / บันทึก</Link>
+          <button type="button" onClick={() => void refresh()} disabled={busy}>รีเฟรช</button>
+        </div>
       </div>
 
       <div className={styles.metrics}>
