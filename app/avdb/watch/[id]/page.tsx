@@ -220,7 +220,11 @@ export default function AvdbWatchPage() {
             onPlaying={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
           />
           {!requested && !started && !starting ? <div className={styles.posterShade} /> : null}
-          {!requested && !started && !starting ? <button className={styles.playButton} type="button" onClick={() => void startPlayback()} aria-label="เริ่มรับชม">▶</button> : null}
+          {!requested && !started && !starting ? (
+            <div className={styles.playOverlay}>
+              <button className={styles.playButton} type="button" onClick={() => void startPlayback()} aria-label="เริ่มรับชม">▶</button>
+            </div>
+          ) : null}
           {requested && !started ? (
             <div className={styles.loadingOverlay} role="status" aria-live="polite">
               <span className={styles.loadingText}>{loadingMessage}</span>
