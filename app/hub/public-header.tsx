@@ -16,7 +16,7 @@ export default function PublicHeader() {
   const isHome = pathname === "/hub";
 
   return <header className={styles.header}>
-      <Link href="/hub" className={styles.brand}>MISSAV<span>CINEMA</span></Link>
+      <Link href="/hub" className={styles.brand}>MISSAV · <span>CINEMA</span></Link>
       <nav className={styles.nav} aria-label="เมนู MISSAV Cinema">
         {links.map((link) => {
           const active = link.exact ? isHome : pathname.startsWith(link.href);
