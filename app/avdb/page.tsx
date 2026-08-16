@@ -108,6 +108,13 @@ function matchesFilter(item: CatalogItem, filter: QuickFilter) {
   return true;
 }
 
+function quickFilterLabel(filter: QuickFilter) {
+  if (filter === "latest") return "มาใหม่";
+  if (filter === "hd") return "HD";
+  if (filter === "long") return "60 นาที+";
+  return "รายการทั้งหมด";
+}
+
 function StorefrontSkeleton() {
   return (
     <main className={ui.pageSkeleton} aria-label="กำลังโหลดหน้า AVDB">
@@ -132,9 +139,9 @@ function StorefrontSkeleton() {
   );
 }
 
-function MovieCard({ item, onSelect, compact = false }: { item: CatalogItem; onSelect: (item: CatalogItem) => void; compact?: boolean }) {
+function MovieCard({ item, onSelect }: { item: CatalogItem; onSelect: (item: CatalogItem) => void }) {
   return (
-    <button className={`${styles.card} ${compact ? styles.cardCompact : ""}`} type="button" onClick={() => onSelect(item)}>
+    <button className={styles.card} type="button" onClick={() => onSelect(item)}>
       <div className={styles.cover}>
         <img src={displayImage(item)} alt={item.title || codeLabel(item)} loading="lazy" />
         <span className={styles.coverShade} />
@@ -149,21 +156,6 @@ function MovieCard({ item, onSelect, compact = false }: { item: CatalogItem; onS
         </div>
       </div>
     </button>
-  );
-}
-
-function HorizontalRow({ title, note, items, onSelect, anchor }: { title: string; note: string; items: CatalogItem[]; onSelect: (item: CatalogItem) => void; anchor?: string }) {
-  if (!items.length) return null;
-  return (
-    <section className={styles.carouselSection} id={anchor}>
-      <div className={styles.rowHeader}>
-        <div><h2>{title}</h2><p>{note}</p></div>
-        <span>{items.length} เรื่อง</span>
-      </div>
-      <div className={styles.carouselTrack}>
-        {items.map((item) => <MovieCard key={item.id} item={item} onSelect={onSelect} compact />)}
-      </div>
-    </section>
   );
 }
 
@@ -227,12 +219,13 @@ export default function AvdbStorefrontPage() {
   const filteredItems = useMemo(() => items.filter((item) => matchesFilter(item, filter)), [items, filter]);
   const heroItems = useMemo(() => items.slice(0, 6), [items]);
   const hero = heroItems[Math.min(heroIndex, Math.max(0, heroItems.length - 1))] || null;
-  const latestItems = useMemo(() => items.slice(0, 12), [items]);
-  const fc2Items = useMemo(() => items.filter((item) => hasCategory(item, "fc2")).slice(0, 12), [items]);
-  const uncensoredItems = useMemo(() => items.filter((item) => hasCategory(item, "uncensored")).slice(0, 12), [items]);
-  const longItems = useMemo(() => items.filter((item) => hasCategory(item, "60-plus") || durationMinutes(item.duration) >= 60).slice(0, 12), [items]);
   const hasMore = page < pageCount;
   const categoryTitle = selectedCategory ? categoryLabel(selectedCategory) : "";
+  const catalogTitle = debouncedQuery
+    ? `ผลการค้นหา “${debouncedQuery}”`
+    : selectedCategory
+      ? `หมวด ${categoryTitle}`
+      : quickFilterLabel(filter);
 
   function chooseQuickFilter(value: QuickFilter) {
     setSelectedCategory("");
@@ -252,7 +245,7 @@ export default function AvdbStorefrontPage() {
         <Link href="/avdb" className={styles.brand}>AVDB<span>INDEX</span></Link>
         <nav className={styles.nav} aria-label="เมนู AVDB">
           <Link href="/avdb" className={styles.navActive}>หน้าแรก</Link>
-          <Link href="#latest">มาใหม่</Link>
+          <Link href="#catalog">มาใหม่</Link>
           <Link href="#categories">หมวดหมู่</Link>
           <Link href="#catalog">ทั้งหมด</Link>
         </nav>
@@ -319,21 +312,10 @@ export default function AvdbStorefrontPage() {
           ))}
         </div>
 
-        {!debouncedQuery && !selectedCategory ? (
-          <>
-            <HorizontalRow title="มาใหม่" note="รายการล่าสุดที่เพิ่งเข้ามา" items={latestItems} onSelect={setSelected} anchor="latest" />
-            <HorizontalRow title="FC2" note="จัดหมวดอัตโนมัติจากรหัสและชื่อเรื่อง" items={fc2Items} onSelect={setSelected} />
-            <HorizontalRow title="ไม่เซ็นเซอร์" note="ตรวจจากคำที่ระบุชัดในชื่อเรื่อง" items={uncensoredItems} onSelect={setSelected} />
-            <HorizontalRow title="ดูยาว 60 นาที+" note="จัดจากระยะเวลาของวิดีโอ" items={longItems} onSelect={setSelected} />
-          </>
-        ) : null}
-
         <section className={styles.catalogSection} id="catalog">
           <div className={styles.toolbar}>
             <div>
-              <h2 className={styles.sectionTitle}>
-                {debouncedQuery ? `ผลการค้นหา “${debouncedQuery}”` : selectedCategory ? `หมวด ${categoryTitle}` : "รายการทั้งหมด"}
-              </h2>
+              <h2 className={styles.sectionTitle}>{catalogTitle}</h2>
               <p className={styles.sectionNote}>มีทั้งหมด {total.toLocaleString()} เรื่อง</p>
             </div>
             <label className={styles.searchBox}>
