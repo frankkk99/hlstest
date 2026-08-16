@@ -1,7 +1,10 @@
 import type { Page } from "puppeteer-core";
 
 const UPLOAD18_HOST = "upload18.org";
+const AUTH_PREFLIGHT_MS = 4500;
 const AUTH_STABILITY_MS = 6500;
+const AUTH_CACHE_MS = 5 * 60 * 1000;
+let upload18AuthValidatedUntil = 0;
 
 type Upload18AuthResult = {
   handled: boolean;
@@ -85,20 +88,37 @@ async function submitLogin(page: Page, username: string, password: string) {
 
 export async function ensureUpload18Authenticated(page: Page, targetUrl: string): Promise<Upload18AuthResult> {
   if (!isUpload18Url(targetUrl)) return { handled: false, authenticated: true };
-  if (!(await isUpload18LoginPage(page))) return { handled: true, authenticated: true };
+
+  // A warm Browser Session that has already proved its Upload18 login may skip
+  // the delayed-gate preflight. If Upload18 sends it back to /login anyway, the
+  // cache is invalidated immediately.
+  if (upload18AuthValidatedUntil > Date.now()) {
+    if (!(await isUpload18LoginPage(page))) return { handled: true, authenticated: true };
+    upload18AuthValidatedUntil = 0;
+  }
+
+  // Upload18's /play page can render first and redirect to /login a few seconds
+  // later. Wait for that gate before concluding the current browser context is
+  // already authenticated.
+  if (!(await isUpload18LoginPage(page))) {
+    await sleep(AUTH_PREFLIGHT_MS);
+    if (!(await isUpload18LoginPage(page))) {
+      upload18AuthValidatedUntil = Date.now() + AUTH_CACHE_MS;
+      return { handled: true, authenticated: true };
+    }
+  }
 
   const username = String(process.env.UPLOAD18_USERNAME || "").trim();
   const password = String(process.env.UPLOAD18_PASSWORD || "");
   if (!username || !password) {
+    upload18AuthValidatedUntil = 0;
     return { handled: true, authenticated: false, reason: "credentials-missing" };
   }
 
   const loginNavigation = await submitLogin(page, username, password);
-  // Upload18 can briefly leave /login and redirect back several seconds later.
-  // Only accept the login after the page remains outside the login gate for a
-  // full stability window.
   await sleep(AUTH_STABILITY_MS);
   if (await isUpload18LoginPage(page)) {
+    upload18AuthValidatedUntil = 0;
     return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
   }
 
@@ -108,12 +128,12 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
     targetStatus = targetNavigation?.status();
   }
 
-  // Confirm the same authenticated browser context survives a fresh request to
-  // the original Player URL before Browser Session starts waiting for HLS.
   await sleep(AUTH_STABILITY_MS);
   if (await isUpload18LoginPage(page)) {
+    upload18AuthValidatedUntil = 0;
     return { handled: true, authenticated: false, reason: "session-not-persisted", pageStatus: targetStatus };
   }
 
+  upload18AuthValidatedUntil = Date.now() + AUTH_CACHE_MS;
   return { handled: true, authenticated: true, pageStatus: targetStatus };
 }
