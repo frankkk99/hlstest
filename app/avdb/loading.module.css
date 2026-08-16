@@ -1,0 +1,23 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #0a0c10;
+}
+
+.spinner {
+  width: 30px;
+  height: 30px;
+  border: 2px solid rgba(255,255,255,.12);
+  border-top-color: #f4a24e;
+  border-radius: 50%;
+  animation: spin .72s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.4s; }
+}
