@@ -37,9 +37,7 @@ async function requestPlaybackSession(catalogId: string, forceFresh = false) {
     cache: "no-store",
   });
   const payload = (await response.json()) as SessionResponse;
-  if (!response.ok || !payload.ok || !payload.session) {
-    throw new Error(payload.error || "ยังเปิด AVDB Player ไม่ได้");
-  }
+  if (!response.ok || !payload.ok || !payload.session) throw new Error(payload.error || "ยังเปิดวิดีโอไม่ได้");
   return payload.session;
 }
 
@@ -52,8 +50,7 @@ export default function AvdbWatchPage() {
   const [starting, setStarting] = useState(false);
   const [started, setStarted] = useState(false);
   const [requested, setRequested] = useState(false);
-  const [message, setMessage] = useState("READY FOR PLAYBACK");
-  const [provider, setProvider] = useState<string | null>(null);
+  const [message, setMessage] = useState("กดปุ่มเล่นเพื่อเริ่มรับชม");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const runRef = useRef(0);
@@ -71,12 +68,10 @@ export default function AvdbWatchPage() {
         ]);
         const detail = (await detailResponse.json()) as DetailResponse;
         const catalog = (await relatedResponse.json()) as CatalogResponse;
-        if (!detailResponse.ok || !detail.ok || !detail.item) throw new Error(detail.error || "ไม่พบรายการ AVDB นี้");
+        if (!detailResponse.ok || !detail.ok || !detail.item) throw new Error(detail.error || "ไม่พบรายการนี้");
         if (!active) return;
         setItem(detail.item);
         setRelated((catalog.items || []).filter((entry) => entry.id !== detail.item?.id).slice(0, 6));
-        setProvider(detail.item.player_provider || null);
-        setMessage("LIVE SOURCE READY");
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : "เปิดรายการนี้ไม่สำเร็จ");
       } finally {
@@ -94,10 +89,7 @@ export default function AvdbWatchPage() {
 
     const promise = requestPlaybackSession(item.id)
       .then((session) => {
-        if (active) {
-          preparedSessionRef.current = session;
-          setProvider(session.provider || item.player_provider || null);
-        }
+        if (active) preparedSessionRef.current = session;
         return active ? session : null;
       })
       .catch(() => null)
@@ -134,7 +126,7 @@ export default function AvdbWatchPage() {
     const run = ++runRef.current;
     setRequested(true);
     setStarting(true);
-    setMessage(attempt ? "RETRYING FRESH SESSION" : "PREPARING LIVE SOURCE");
+    setMessage(attempt ? "กำลังลองเชื่อมต่ออีกครั้ง…" : "กำลังเตรียมวิดีโอ…");
     stopVideo();
 
     try {
@@ -147,7 +139,6 @@ export default function AvdbWatchPage() {
       session ??= await requestPlaybackSession(item.id, attempt > 0);
       if (runRef.current !== run) return;
       preparedSessionRef.current = session;
-      setProvider(session.provider || item.player_provider || null);
 
       const video = videoRef.current;
       if (!video) throw new Error("ไม่พบเครื่องเล่นวิดีโอ");
@@ -159,7 +150,7 @@ export default function AvdbWatchPage() {
         else {
           setStarting(false);
           setRequested(false);
-          setMessage("PLAYER TEMPORARILY UNAVAILABLE");
+          setMessage("วิดีโอยังไม่พร้อม ลองใหม่อีกครั้งภายหลัง");
         }
       };
 
@@ -168,16 +159,16 @@ export default function AvdbWatchPage() {
         video.src = session.playbackUrl;
         video.load();
         await video.play().catch(() => undefined);
-        setMessage("PLAYBACK READY");
+        setMessage("พร้อมรับชม");
       } else {
         const hlsModule = await (hlsModuleRef.current ??= import("hls.js"));
         const HlsPlayer = hlsModule.default;
-        if (!HlsPlayer.isSupported()) throw new Error("อุปกรณ์นี้ยังไม่รองรับ HLS");
+        if (!HlsPlayer.isSupported()) throw new Error("อุปกรณ์นี้ยังไม่รองรับการเล่นวิดีโอ");
         const hls = new HlsPlayer({ enableWorker: true, maxBufferLength: 20, capLevelToPlayerSize: true, startLevel: -1 });
         hlsRef.current = hls;
         hls.on(HlsPlayer.Events.ERROR, (_event, details) => { if (details.fatal) retry(); });
         hls.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
-          setMessage("PLAYBACK READY");
+          setMessage("พร้อมรับชม");
           void video.play().catch(() => undefined);
         });
         hls.attachMedia(video);
@@ -196,82 +187,59 @@ export default function AvdbWatchPage() {
     }
   }
 
-  if (loading) {
-    return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>AVDB INDEX</strong><p>กำลังเตรียมรายการที่ Publish แล้ว</p></div></div></main>;
-  }
+  if (loading) return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>AVDB INDEX</strong><p>กำลังโหลดรายการ…</p></div></div></main>;
 
-  if (!item) {
-    return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>ไม่พบรายการนี้</strong><p>{message}</p><Link href="/avdb">กลับ AVDB INDEX</Link></div></div></main>;
-  }
+  if (!item) return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>ไม่พบรายการนี้</strong><p>{message}</p><Link href="/avdb">กลับหน้าแรก</Link></div></div></main>;
 
   const poster = item.poster_url || item.thumb_url || "";
+  const code = item.movie_code || item.external_id || "AVDB";
 
   return (
     <main className={styles.page}>
       <header className={styles.header}>
         <Link href="/avdb" className={styles.brand}>AVDB<span>INDEX</span></Link>
-        <Link href="/avdb" className={styles.back}>← BACK TO INDEX</Link>
+        <Link href="/avdb" className={styles.back}>← กลับหน้าแรก</Link>
         <SourceSwitcher current="avdb" />
       </header>
 
       <div className={styles.shell}>
-        <div className={styles.topline}>
-          <span>AVDB / LIVE WATCH</span>
-          <span>{item.movie_code || item.external_id || item.id.slice(0, 8)}</span>
-        </div>
-
         <section className={styles.playerFrame}>
           <video
             ref={videoRef}
             controls
             playsInline
             poster={poster || undefined}
-            onPlay={() => { setStarted(true); setStarting(false); setMessage("PLAYING"); }}
-            onPlaying={() => { setStarted(true); setStarting(false); setMessage("PLAYING"); }}
+            onPlay={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
+            onPlaying={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
           />
           {!requested && !started && !starting ? <div className={styles.posterShade} /> : null}
-          {!requested && !started && !starting ? (
-            <button className={styles.playButton} type="button" onClick={() => void startPlayback()} aria-label="เริ่มรับชม">▶</button>
-          ) : null}
-          {requested && !started ? (
-            <div className={styles.loadingOverlay}><div className={styles.progressTrack}><span className={styles.progressBar} /></div></div>
-          ) : null}
+          {!requested && !started && !starting ? <button className={styles.playButton} type="button" onClick={() => void startPlayback()} aria-label="เริ่มรับชม">▶</button> : null}
+          {requested && !started ? <div className={styles.loadingOverlay}><div className={styles.progressTrack}><span className={styles.progressBar} /></div></div> : null}
         </section>
 
-        <div className={styles.infoGrid}>
-          <section className={styles.infoCard}>
-            <p className={styles.code}>{item.movie_code || item.external_id || "AVDB"}</p>
+        <section className={styles.watchInfo}>
+          <div className={styles.infoMain}>
+            <p className={styles.code}>{code}</p>
             <h1 className={styles.title}>{item.title}</h1>
             {item.original_title && item.original_title !== item.title ? <p className={styles.original}>{item.original_title}</p> : null}
             <div className={styles.meta}>
               {item.year ? <span>{item.year}</span> : null}
               {item.quality ? <span>{item.quality}</span> : null}
               {item.duration ? <span>{item.duration}</span> : null}
-              <span>LIVE SOURCE</span>
             </div>
             {item.description ? <p className={styles.description}>{item.description}</p> : null}
-          </section>
-
-          <aside className={styles.statusCard}>
-            <div className={styles.statusHead}><span>PLAYBACK SESSION</span><b>{starting ? "WORKING" : started ? "LIVE" : "READY"}</b></div>
-            <div className={styles.statusRows}>
-              <div><span>Catalog</span><strong>Published</strong></div>
-              <div><span>Resolver</span><strong>On demand</strong></div>
-              <div><span>Provider</span><strong>{provider || "source"}</strong></div>
-              <div><span>Session</span><strong>Fresh on watch</strong></div>
-            </div>
-            <p className={styles.statusMessage}>{message}</p>
-          </aside>
-        </div>
+          </div>
+          <p className={styles.playbackMessage}>{message}</p>
+        </section>
 
         {related.length ? (
           <section className={styles.related}>
-            <div className={styles.sectionHead}><h2>MORE FROM AVDB</h2><span>PUBLISHED CATALOG</span></div>
+            <div className={styles.sectionHead}><h2>เรื่องอื่นที่น่าสนใจ</h2><span>เลือกดูต่อ</span></div>
             <div className={styles.grid}>
               {related.map((entry) => (
                 <Link className={styles.card} href={`/avdb/watch/${entry.id}`} key={entry.id}>
                   <div className={styles.cover}>{entry.thumb_url || entry.poster_url ? <img src={entry.thumb_url || entry.poster_url || ""} alt="" loading="lazy" /> : null}</div>
-                  <div className={styles.cardBody}><strong>{entry.title}</strong><span>{entry.movie_code || entry.year || "AVDB"}</span></div>
+                  <div className={styles.cardBody}><strong>{entry.title}</strong><span>{entry.movie_code || entry.duration || "AVDB"}</span></div>
                 </Link>
               ))}
             </div>
