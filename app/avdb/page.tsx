@@ -199,9 +199,9 @@ export default function AvdbStorefrontPage() {
                 <span>PLAYER VERIFIED</span>
               </div>
               {selected.description ? <div className={styles.modalDescription}>{selected.description}</div> : null}
-              <div className={styles.modalFooter}>
-                <span>Provider</span><strong>{selected.player_provider || "verified source"}</strong>
-              </div>
+              <Link href={`/avdb/watch/${selected.id}`} className={styles.modalFooter} style={{ textDecoration: "none", color: "inherit" }}>
+                <span>▶ WATCH VERIFIED SOURCE</span><strong>{selected.player_provider || "verified source"}</strong>
+              </Link>
             </div>
           </section>
         </div>
