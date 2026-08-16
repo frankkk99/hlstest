@@ -8,7 +8,7 @@ export const maxDuration = 60;
 type BrowserSessionPayload = {
   ok?: boolean;
   error?: string;
-  failureType?: "chromium" | "player";
+  failureType?: "chromium" | "player" | "auth";
   session?: {
     sessionId: string;
     mediaUrl: string;
