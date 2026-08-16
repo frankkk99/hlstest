@@ -96,14 +96,14 @@ export default function AvdbStorefrontPage() {
 
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.kicker}>AVDBAPI / VERIFIED PUBLIC CATALOG</p>
+          <p className={styles.kicker}>AVDBAPI / LIVE PUBLIC CATALOG</p>
           <h1>AVDB<br /><span>INDEX</span></h1>
           <p className={styles.description}>
-            Catalog นี้แยกจาก MISSAV โดยสมบูรณ์ และแสดงเฉพาะรายการ AVDB ที่ผ่าน Staging, Duplicate Gate และ Player Verification ก่อน Publish แล้วเท่านั้น
+            Catalog นี้แยกจาก MISSAV โดยสมบูรณ์ ข้อมูลหนัง Publish ได้เมื่อมี source page และตอนกดดูระบบจะสร้าง Browser Session ใหม่เพื่อหา Player สดแบบเดียวกับ MISSAV
           </p>
           <div className={styles.heroMeta}>
             <span>CATALOG: PUBLIC</span>
-            <span>PLAYER GATE: REQUIRED</span>
+            <span>PLAYER MODE: LIVE SESSION</span>
             <span>MISSAV MERGE: DISABLED</span>
           </div>
         </div>
@@ -112,9 +112,9 @@ export default function AvdbStorefrontPage() {
           <div className={styles.panelCode}>AVDB / {String(total).padStart(2, "0")}</div>
           <div className={styles.panelRows}>
             <div><span>Source</span><strong>avdbapi.com</strong></div>
-            <div><span>Catalog</span><strong>Published only</strong></div>
+            <div><span>Catalog</span><strong>Published metadata</strong></div>
             <div><span>Published items</span><strong>{publishedLabel}</strong></div>
-            <div><span>Player</span><strong>{heroItem ? "Verified" : "Waiting"}</strong></div>
+            <div><span>Player</span><strong>{heroItem ? "On demand" : "Waiting"}</strong></div>
           </div>
         </aside>
       </section>
@@ -124,7 +124,7 @@ export default function AvdbStorefrontPage() {
           <div>
             <p className={styles.toolbarEyebrow}>PUBLIC CATALOG</p>
             <h2>รายการจาก AVDBAPI</h2>
-            <p>ค้นหาจากรหัสหรือชื่อได้ทันที ข้อมูลในหน้านี้มาจาก Public Catalog หลังผ่าน Publish Gate เท่านั้น</p>
+            <p>ค้นหาจากรหัสหรือชื่อได้ทันที การ์ดมาจาก metadata ที่ Publish แล้ว ส่วน Player จะ resolve สดตอนกดรับชม</p>
           </div>
           <label className={styles.searchBox}>
             <span>SEARCH</span>
@@ -171,13 +171,13 @@ export default function AvdbStorefrontPage() {
         ) : (
           <div className={styles.emptyState}>
             <strong>{debouncedQuery ? "ไม่พบรายการที่ค้นหา" : "ยังไม่มี AVDB ที่ Publish"}</strong>
-            <span>{debouncedQuery ? `ไม่พบ “${debouncedQuery}” ใน Public Catalog` : "เมื่อรายการผ่าน Player Verification และกด Publish จาก Admin แล้ว จะขึ้นตรงนี้ทันที"}</span>
+            <span>{debouncedQuery ? `ไม่พบ “${debouncedQuery}” ใน Public Catalog` : "เมื่อมี metadata และ player source แล้ว สามารถ Publish การ์ดขึ้น Catalog ได้ทันที"}</span>
           </div>
         )}
 
         <div className={styles.notice}>
-          <strong>VERIFIED CATALOG</strong>
-          <span>การเปิดหน้านี้อ่านเฉพาะ <code>/api/avdb/catalog</code> และไม่เรียก crawler หรือ <code>/api/avdb-scan</code></span>
+          <strong>LIVE PLAYBACK CATALOG</strong>
+          <span>การเปิดหน้านี้อ่านเฉพาะ <code>/api/avdb/catalog</code>; Chromium จะทำงานเมื่อเปิดหน้าดู ไม่ทำงานตอนโหลดรายการ</span>
         </div>
       </section>
 
@@ -196,11 +196,11 @@ export default function AvdbStorefrontPage() {
                 {selected.year ? <span>{selected.year}</span> : null}
                 {selected.quality ? <span>{selected.quality}</span> : null}
                 {selected.duration ? <span>{selected.duration}</span> : null}
-                <span>PLAYER VERIFIED</span>
+                <span>LIVE SOURCE</span>
               </div>
               {selected.description ? <div className={styles.modalDescription}>{selected.description}</div> : null}
               <Link href={`/avdb/watch/${selected.id}`} className={styles.modalFooter} style={{ textDecoration: "none", color: "inherit" }}>
-                <span>▶ WATCH VERIFIED SOURCE</span><strong>{selected.player_provider || "verified source"}</strong>
+                <span>▶ WATCH LIVE SOURCE</span><strong>{selected.player_provider || "source page"}</strong>
               </Link>
             </div>
           </section>
