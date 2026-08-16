@@ -2,7 +2,9 @@ import { defaultUserAgent, validateUpstreamUrl } from "@/lib/security";
 import { createStreamToken } from "@/lib/stream-token";
 
 const FAST_SESSION_TTL_MS = 30 * 60 * 1000;
-const DIRECT_TIMEOUT_MS = 6500;
+const VERIFIED_HINT_TIMEOUT_MS = 1400;
+const DIRECT_UPLOAD18_TOTAL_TIMEOUT_MS = 2800;
+const MIN_DIRECT_INSPECT_MS = 350;
 
 type Check = {
   url: string;
@@ -58,9 +60,14 @@ function requestHeaders(referer: string, userAgent: string) {
   return headers;
 }
 
-async function inspectManifestDirect(manifestUrl: string, referer: string, userAgent: string) {
+async function inspectManifestDirect(
+  manifestUrl: string,
+  referer: string,
+  userAgent: string,
+  timeoutMs: number,
+) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DIRECT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   const headers = requestHeaders(referer, userAgent);
 
   try {
@@ -181,8 +188,15 @@ export async function resolveAvdbFastPlayback(input: {
   if (!isUpload18Page(input.pageUrl)) return null;
   const userAgent = input.userAgent || defaultUserAgent();
 
+  // A stale verified URL must never hold the user for several seconds. Give it
+  // a short all-in budget, then move immediately to a fresh direct resolve.
   if (!input.forceFresh && input.mediaHint) {
-    const hintDiagnostics = await inspectManifestDirect(input.mediaHint, input.pageUrl, userAgent);
+    const hintDiagnostics = await inspectManifestDirect(
+      input.mediaHint,
+      input.pageUrl,
+      userAgent,
+      VERIFIED_HINT_TIMEOUT_MS,
+    );
     if (hintDiagnostics) {
       const result = makePlaybackResult({
         mode: "verified-hint",
@@ -195,9 +209,13 @@ export async function resolveAvdbFastPlayback(input: {
     }
   }
 
+  // The fresh Upload18 direct path gets one shared wall-clock budget covering
+  // both the HTML/PLAYER_CONFIG fetch and HLS validation. If it cannot finish
+  // quickly, let the existing Browser Session fallback take over.
+  const directStartedAt = Date.now();
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DIRECT_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), DIRECT_UPLOAD18_TOTAL_TIMEOUT_MS);
     try {
       const response = await fetch(input.pageUrl, {
         headers: {
@@ -218,8 +236,12 @@ export async function resolveAvdbFastPlayback(input: {
       const mediaUrl = String(config.m3u8 || "").trim();
       if (!mediaUrl) return null;
       validateUpstreamUrl(mediaUrl);
+
+      const remainingMs = DIRECT_UPLOAD18_TOTAL_TIMEOUT_MS - (Date.now() - directStartedAt);
+      if (remainingMs < MIN_DIRECT_INSPECT_MS) return null;
+
       const referer = response.url && isUpload18Page(response.url) ? response.url : input.pageUrl;
-      const diagnostics = await inspectManifestDirect(mediaUrl, referer, userAgent);
+      const diagnostics = await inspectManifestDirect(mediaUrl, referer, userAgent, remainingMs);
       if (!diagnostics) return null;
       return makePlaybackResult({
         mode: "direct-upload18",
