@@ -103,10 +103,6 @@ export default function PlayerGatewayHomePage() {
       <div className={styles.shell}>
         <header className={styles.header}>
           <Link href="/" className={styles.brand}>PLAYER<span>GATEWAY</span></Link>
-          <nav className={styles.headerActions}>
-            <Link href="/avdb">AVDB</Link>
-            <Link href="/admin">Admin</Link>
-          </nav>
         </header>
 
         <section className={styles.toolbar}>
