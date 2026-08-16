@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import SourceSwitcher from "../source-switcher";
+import ExpandableText from "./expandable-text";
 import styles from "./avdb.module.css";
+import ui from "./ui-polish.module.css";
 
 type CatalogItem = {
   id: string;
@@ -115,7 +117,7 @@ function MovieCard({ item, onSelect, compact = false }: { item: CatalogItem; onS
         <span className={styles.hoverPlay} aria-hidden="true">▶</span>
       </div>
       <div className={styles.cardBody}>
-        <strong className={styles.cardTitle}>{item.title || codeLabel(item)}</strong>
+        <strong className={`${styles.cardTitle} ${ui.cardTitle3}`}>{item.title || codeLabel(item)}</strong>
         <div className={styles.cardMeta}>
           <span>{codeLabel(item)}</span>
           {item.quality ? <span>{item.quality}</span> : null}
@@ -240,8 +242,8 @@ export default function AvdbStorefrontPage() {
           <div className={styles.container}>
             <div className={styles.heroContent}>
               <p className={styles.heroKicker}>{selectedCategory ? `หมวด ${categoryTitle}` : "เรื่องเด่นจาก AVDB"}</p>
-              <h1 className={styles.heroTitle}>{hero.title || codeLabel(hero)}</h1>
-              <p className={styles.heroDescription}>{hero.description || "เลือกเรื่องที่ต้องการ แล้วเริ่มรับชมได้ทันที"}</p>
+              <ExpandableText as="h1" lines={3} text={hero.title || codeLabel(hero)} className={styles.heroTitle} />
+              <ExpandableText as="p" lines={3} text={hero.description || "เลือกเรื่องที่ต้องการ แล้วเริ่มรับชมได้ทันที"} className={styles.heroDescription} />
               <div className={styles.heroMeta}>
                 <span>{codeLabel(hero)}</span>
                 {hero.quality ? <span>{hero.quality}</span> : null}
@@ -341,14 +343,16 @@ export default function AvdbStorefrontPage() {
 
       {selected ? (
         <div className={styles.modalBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
-          <section className={styles.modal} role="dialog" aria-modal="true" aria-label={selected.title}>
+          <section className={`${styles.modal} ${ui.modalShell}`} role="dialog" aria-modal="true" aria-label={selected.title}>
             <button className={styles.close} type="button" onClick={() => setSelected(null)} aria-label="ปิด">×</button>
-            <div className={styles.modalCover}><img src={selected.poster_url || selected.thumb_url || "/cover-fallback.svg"} alt="" /></div>
-            <div className={styles.modalContent}>
+            <div className={`${styles.modalCover} ${ui.modalMedia}`}><img src={selected.thumb_url || selected.poster_url || "/cover-fallback.svg"} alt="" /></div>
+            <div className={`${styles.modalContent} ${ui.modalBody}`}>
               <span className={styles.modalLabel}>{codeLabel(selected)}</span>
-              <h2 className={styles.modalTitle}>{selected.title}</h2>
-              {selected.original_title && selected.original_title !== selected.title ? <p className={styles.modalOriginal}>{selected.original_title}</p> : null}
-              <p className={styles.modalDescription}>{selected.description || "พร้อมรับชมแล้ว"}</p>
+              <ExpandableText as="h2" lines={3} text={selected.title || codeLabel(selected)} className={`${styles.modalTitle} ${ui.modalTitleText}`} />
+              {selected.original_title && selected.original_title !== selected.title ? (
+                <ExpandableText as="p" lines={3} text={selected.original_title} className={styles.modalOriginal} />
+              ) : null}
+              <ExpandableText as="p" lines={3} text={selected.description || "พร้อมรับชมแล้ว"} className={`${styles.modalDescription} ${ui.modalDescriptionText}`} />
               <div className={styles.modalMeta}>
                 {selected.year ? <span>{selected.year}</span> : null}
                 {selected.quality ? <span>{selected.quality}</span> : null}
