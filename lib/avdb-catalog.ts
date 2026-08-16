@@ -15,6 +15,7 @@ export type AvdbPublicCatalogItem = {
   poster_url: string | null;
   thumb_url: string | null;
   player_provider: string | null;
+  categories: string[];
   published_at: string;
 };
 
@@ -71,6 +72,11 @@ function cleanSearch(value: unknown) {
     .slice(0, 80);
 }
 
+function cleanCategory(value: unknown) {
+  const category = String(value ?? "").trim().toLowerCase();
+  return /^[a-z0-9-]{1,40}$/.test(category) ? category : "";
+}
+
 function clampInt(value: unknown, min: number, max: number, fallback: number) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
@@ -106,18 +112,20 @@ export async function fetchAvdbPublicCatalog(input: {
   page?: unknown;
   limit?: unknown;
   search?: unknown;
+  category?: unknown;
 }) {
   const database = db();
   const page = clampInt(input.page, 1, 100000, 1);
   const limit = clampInt(input.limit, 1, 48, 24);
   const search = cleanSearch(input.search);
+  const category = cleanCategory(input.category);
   const from = (page - 1) * limit;
   const to = from + limit - 1;
 
   let query = database
     .from("avdb_catalog_items")
     .select(
-      "id,stage_item_id,external_id,movie_code,title,original_title,slug,year,quality,duration,description,poster_url,thumb_url,player_provider,published_at",
+      "id,stage_item_id,external_id,movie_code,title,original_title,slug,year,quality,duration,description,poster_url,thumb_url,player_provider,categories,published_at",
       { count: "exact" },
     )
     .eq("source", "avdbapi")
@@ -128,6 +136,9 @@ export async function fetchAvdbPublicCatalog(input: {
   if (search) {
     query = query.or(`movie_code.ilike.%${search}%,title.ilike.%${search}%,original_title.ilike.%${search}%`);
   }
+  if (category) {
+    query = query.contains("categories", [category]);
+  }
 
   const response = await query;
   if (response.error) throw new Error(response.error.message);
@@ -137,6 +148,7 @@ export async function fetchAvdbPublicCatalog(input: {
     page,
     limit,
     search,
+    category,
     total,
     pageCount: Math.max(1, Math.ceil(total / limit)),
     items: (response.data || []) as AvdbPublicCatalogItem[],
