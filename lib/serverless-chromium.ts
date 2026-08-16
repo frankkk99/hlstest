@@ -41,6 +41,19 @@ function isReady(filePath: string, directory = false) {
   }
 }
 
+function getSystemChromiumExecutable() {
+  const configured = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+  const candidates = [
+    configured,
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ].filter((value): value is string => Boolean(value));
+
+  return candidates.find((candidate) => existsSync(candidate)) || null;
+}
+
 async function inflateWithoutChown(filePath: string) {
   const output = outputPath(filePath);
   const swiftshader = filePath.includes("swiftshader");
@@ -90,6 +103,9 @@ async function prepareChromium() {
 }
 
 export function getServerlessChromiumExecutable() {
+  const systemChromium = getSystemChromiumExecutable();
+  if (systemChromium) return Promise.resolve(systemChromium);
+
   executablePromise ??= prepareChromium().catch((error) => {
     executablePromise = null;
     throw error;

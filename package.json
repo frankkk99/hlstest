@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:aapanel": "node .next/standalone/server.js",
+    "deploy:aapanel": "bash scripts/deploy-aapanel.sh",
     "lint": "next lint"
   },
   "dependencies": {
