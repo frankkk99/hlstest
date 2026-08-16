@@ -1,0 +1,57 @@
+.console {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 89;
+  width: min(360px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid rgba(120, 74, 14, .25);
+  border-radius: 18px;
+  color: #2b2115;
+  background: rgba(251, 244, 228, .97);
+  box-shadow: 0 24px 70px rgba(62, 40, 13, .22);
+  backdrop-filter: blur(18px);
+}
+.closed { width: min(285px, calc(100vw - 24px)); }
+.handle {
+  width: 100%; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 13px; border: 0; color: #352719; background: rgba(255,255,255,.28); cursor: pointer;
+}
+.handle span { display: inline-flex; align-items: center; gap: 8px; font-size: 9px; font-weight: 950; letter-spacing: .11em; }
+.handle b { color: #a45e00; font-size: 10px; }
+.dot, .liveDot { width: 7px; height: 7px; border-radius: 50%; background: #c27a18; box-shadow: 0 0 0 4px rgba(194,122,24,.12); }
+.liveDot { background: #3b9d69; box-shadow: 0 0 0 4px rgba(59,157,105,.12); animation: pulse 1.3s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.body { padding: 0 13px 13px; border-top: 1px solid rgba(78,52,20,.1); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 1px 10px; }
+.heading div { display: grid; gap: 3px; }
+.heading small { color: #967a54; font-size: 7px; font-weight: 900; letter-spacing: .14em; }
+.heading strong { font-size: 14px; letter-spacing: -.02em; }
+.heading > span { padding: 5px 7px; border: 1px solid rgba(158,91,0,.18); border-radius: 999px; color: #985900; background: rgba(206,135,35,.08); font-size: 7px; font-weight: 950; letter-spacing: .08em; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.metrics div { padding: 10px; border: 1px solid rgba(82,56,25,.1); border-radius: 10px; background: rgba(255,255,255,.35); }
+.metrics span { display: block; color: #967d5b; font-size: 7px; font-weight: 950; letter-spacing: .08em; }
+.metrics b { display: block; margin-top: 5px; font-size: 19px; }
+.notice, .error { margin: 9px 0 0; padding: 8px 9px; border-radius: 9px; font-size: 8px; line-height: 1.5; }
+.notice { color: #2d744e; background: rgba(76,161,105,.1); border: 1px solid rgba(76,161,105,.14); }
+.error { color: #9b3c30; background: rgba(217,79,61,.08); border: 1px solid rgba(217,79,61,.14); }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+.actions button { min-height: 36px; padding: 7px 9px; border: 1px solid rgba(83,55,22,.13); border-radius: 9px; color: #705a3a; background: rgba(255,255,255,.44); font-size: 8px; font-weight: 950; cursor: pointer; }
+.actions button:disabled { opacity: .38; cursor: not-allowed; }
+.actions .primary { color: #fff5e5; border-color: #322518; background: #322518; }
+.actions .stop:not(:disabled) { color: #983e31; border-color: rgba(172,67,52,.2); background: rgba(214,91,72,.08); }
+.recent { margin-top: 11px; padding-top: 9px; border-top: 1px solid rgba(79,54,23,.1); }
+.recentTitle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.recentTitle span { color: #795e3b; font-size: 8px; font-weight: 950; }
+.recentTitle small { color: #a18a69; font-size: 6px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 1px; border-bottom: 1px solid rgba(79,54,23,.07); }
+.row:last-child { border-bottom: 0; }
+.row > div { min-width: 0; display: grid; gap: 2px; }
+.row b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
+.row span { color: #9a8261; font-size: 6px; }
+.row button { flex: 0 0 auto; min-height: 25px; padding: 4px 7px; border: 1px solid rgba(155,61,47,.16); border-radius: 7px; color: #924034; background: rgba(211,83,65,.06); font-size: 7px; font-weight: 900; }
+.empty, .footer { margin: 8px 0 0; color: #8a7354; font-size: 7px; line-height: 1.45; }
+@media (max-width: 640px) {
+  .console { left: 8px; bottom: 62px; width: calc(100vw - 16px); }
+  .closed { width: min(270px, calc(100vw - 16px)); }
+}
