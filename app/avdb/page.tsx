@@ -34,7 +34,7 @@ function pageUrl(page: number) {
 }
 
 function itemKey(item: AvdbItem) {
-  return String(item.id ?? item.movieCode || item.slug || item.apiUrl);
+  return String(item.id ?? (item.movieCode || item.slug || item.apiUrl));
 }
 
 function imageUrl(item: AvdbItem) {
