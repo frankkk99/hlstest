@@ -32,46 +32,52 @@ async function pbkdf2(value: string, salt: string, iterations: number) {
   return Array.from(new Uint8Array(bits), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function configuredCredentials() {
+function optionalEnvCredentials() {
   const username = String(process.env.HLSHUB_ADMIN_USERNAME || "").trim();
   const password = String(process.env.HLSHUB_ADMIN_PASSWORD || process.env.HLSHUB_ADMIN_KEY || "");
-  if (username && password) return { mode: "env" as const, username, password };
-  return { mode: "builtin" as const, username: BUILTIN_ADMIN_USERNAME };
+  return username && password ? { username, password } : null;
+}
+
+function sessionSecret() {
+  return String(
+    process.env.HLSHUB_ADMIN_SESSION_SECRET ||
+    process.env.HLSHUB_ADMIN_PASSWORD ||
+    process.env.HLSHUB_ADMIN_KEY ||
+    BUILTIN_PASSWORD_HASH,
+  );
 }
 
 export async function createAdminSessionToken() {
-  const credentials = configuredCredentials();
-  if (credentials.mode === "env") {
-    return sha256(`hlshub-admin-session:v2:${credentials.username}:${credentials.password}`);
-  }
-  return sha256(`hlshub-admin-session:v2:${credentials.username}:${BUILTIN_PASSWORD_HASH}`);
+  return sha256(`hlshub-admin-session:v2:${sessionSecret()}`);
 }
 
 export async function verifyAdminCredentials(username: string, password: string) {
-  const credentials = configuredCredentials();
   const providedUsername = String(username || "").trim();
   const providedPassword = String(password || "");
   if (!providedUsername || !providedPassword) return false;
 
-  const [providedUserHash, expectedUserHash] = await Promise.all([
+  const [providedUserHash, builtinUserHash] = await Promise.all([
     sha256(providedUsername),
-    sha256(credentials.username),
+    sha256(BUILTIN_ADMIN_USERNAME),
   ]);
-  if (providedUserHash !== expectedUserHash) return false;
 
-  if (credentials.mode === "env") {
-    const [providedHash, expectedHash] = await Promise.all([
-      sha256(providedPassword),
-      sha256(credentials.password),
-    ]);
-    return providedHash === expectedHash;
+  if (providedUserHash === builtinUserHash) {
+    const providedHash = await pbkdf2(providedPassword, BUILTIN_PASSWORD_SALT, BUILTIN_PASSWORD_ITERATIONS);
+    if (providedHash === BUILTIN_PASSWORD_HASH) return true;
   }
 
-  const providedHash = await pbkdf2(providedPassword, BUILTIN_PASSWORD_SALT, BUILTIN_PASSWORD_ITERATIONS);
-  return providedHash === BUILTIN_PASSWORD_HASH;
+  const envCredentials = optionalEnvCredentials();
+  if (!envCredentials) return false;
+
+  const [envProvidedUserHash, envExpectedUserHash, providedPasswordHash, expectedPasswordHash] = await Promise.all([
+    sha256(providedUsername),
+    sha256(envCredentials.username),
+    sha256(providedPassword),
+    sha256(envCredentials.password),
+  ]);
+  return envProvidedUserHash === envExpectedUserHash && providedPasswordHash === expectedPasswordHash;
 }
 
 export async function verifyAdminPassword(password: string) {
-  const credentials = configuredCredentials();
-  return verifyAdminCredentials(credentials.username, password);
+  return verifyAdminCredentials(BUILTIN_ADMIN_USERNAME, password);
 }
