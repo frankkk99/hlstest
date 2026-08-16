@@ -16,6 +16,7 @@ type Upload18AuthResult = {
 type LoginSaveResult = {
   success: boolean;
   message: string;
+  code: number | null;
 };
 
 function isUpload18Url(raw: string) {
@@ -57,16 +58,25 @@ async function isUpload18LoginPage(page: Page) {
   }).catch(() => false);
 }
 
+function safeAuthMessage(value: unknown) {
+  return String(value ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+}
+
 async function readLoginSaveResult(page: Page): Promise<LoginSaveResult | null> {
   if (!isUpload18LoginSaveUrl(page.url())) return null;
   const text = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
   if (!text.trim()) return null;
   try {
     const payload = JSON.parse(text) as { code?: unknown; msg?: unknown; message?: unknown; success?: unknown };
-    const message = String(payload.msg ?? payload.message ?? "").trim();
-    const code = Number(payload.code);
+    const message = safeAuthMessage(payload.msg ?? payload.message ?? "");
+    const parsedCode = Number(payload.code);
+    const code = Number.isFinite(parsedCode) ? parsedCode : null;
     const success = payload.success === true || code === 1 || /success|successful|welcome|logged\s*in/i.test(message);
-    return { success, message };
+    return { success, message, code };
   } catch {
     return null;
   }
@@ -135,6 +145,7 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
   const password = String(process.env.UPLOAD18_PASSWORD || "");
   if (!username || !password) {
     upload18AuthValidatedUntil = 0;
+    console.warn("[upload18-auth] credentials are missing");
     return { handled: true, authenticated: false, reason: "credentials-missing" };
   }
 
@@ -142,13 +153,19 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
   const saveResult = await readLoginSaveResult(page);
   if (saveResult && !saveResult.success) {
     upload18AuthValidatedUntil = 0;
+    console.warn(`[upload18-auth] login rejected code=${saveResult.code ?? "unknown"} msg=${saveResult.message || "(empty)"}`);
     return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
+  }
+
+  if (saveResult?.success) {
+    console.info(`[upload18-auth] login accepted code=${saveResult.code ?? "unknown"}`);
   }
 
   if (!saveResult) {
     await sleep(AUTH_STABILITY_MS);
     if (await isUpload18LoginPage(page)) {
       upload18AuthValidatedUntil = 0;
+      console.warn("[upload18-auth] login failed without a readable /login/save JSON response");
       return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
     }
   }
@@ -162,9 +179,11 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
   await sleep(AUTH_STABILITY_MS);
   if (await isUpload18LoginPage(page)) {
     upload18AuthValidatedUntil = 0;
+    console.warn("[upload18-auth] authenticated request returned to login page; session did not persist");
     return { handled: true, authenticated: false, reason: "session-not-persisted", pageStatus: targetStatus };
   }
 
   upload18AuthValidatedUntil = Date.now() + AUTH_CACHE_MS;
+  console.info(`[upload18-auth] session ready targetStatus=${targetStatus ?? "unknown"}`);
   return { handled: true, authenticated: true, pageStatus: targetStatus };
 }
