@@ -13,10 +13,10 @@ const links = [
 
 export default function PublicHeader() {
   const pathname = usePathname();
-  const isHome = pathname === "/" || pathname === "/hub";
+  const isHome = pathname === "/hub";
 
   return <header className={styles.header}>
-      <Link href="/" className={styles.brand}>HLS<span>HUB</span></Link>
+      <Link href="/hub" className={styles.brand}>HLS<span>HUB</span> · MISSAV</Link>
       <nav className={styles.nav} aria-label="เมนูเว็บไซต์">
         {links.map((link) => {
           const active = link.exact ? isHome : pathname.startsWith(link.href);
@@ -25,6 +25,7 @@ export default function PublicHeader() {
       </nav>
       <div className={styles.headerActions}>
         <Link className={styles.headerSearch} href="/hub#search">ค้นหา</Link>
+        <Link className={styles.headerSearch} href="/">เปลี่ยนแหล่ง</Link>
       </div>
     </header>;
 }
