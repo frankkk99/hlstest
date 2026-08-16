@@ -76,11 +76,11 @@ type AdminState = {
 };
 
 const pipeline = [
-  { key: "source", number: "01", title: "Source", note: "รอเชื่อม crawler กับ /api/avdb-scan" },
-  { key: "staging", number: "02", title: "Staging", note: "ฐานพักข้อมูลพร้อมใช้งานแล้ว" },
-  { key: "duplicate", number: "03", title: "Duplicate", note: "เตรียม dedupe key และรายการซ้ำ" },
-  { key: "player", number: "04", title: "Player", note: "รอต่อ Player verification" },
-  { key: "publish", number: "05", title: "Publish", note: "ยังล็อกจนกว่าจะผ่าน Player" },
+  { key: "source", number: "01", title: "Source", note: "Crawler ใช้ scanner core เดียวกับ Source Lab" },
+  { key: "staging", number: "02", title: "Staging", note: "พบรายการแล้วเขียนเข้าจุดพักทันทีทีละหน้า" },
+  { key: "duplicate", number: "03", title: "Duplicate", note: "เทียบ external id + code/slug/title ก่อนสร้างรายการใหม่" },
+  { key: "player", number: "04", title: "Player", note: "เก็บ player page ไว้ก่อน รอต่อ verification รอบถัดไป" },
+  { key: "publish", number: "05", title: "Publish", note: "ยังล็อกจนกว่าจะผ่าน Player verification" },
 ] as const;
 
 const tabDefs = [
@@ -94,10 +94,10 @@ const tabDefs = [
 type TabKey = (typeof tabDefs)[number][0];
 
 const fallbackLogs = [
-  { id: -1, time: "SYSTEM", text: "AVDB Staging DB พร้อมใช้งานแล้ว", tone: "safe" },
-  { id: -2, time: "SYSTEM", text: "Control API พร้อม: Create Run / Pause / Resume / Checkpoint / Cancel", tone: "safe" },
-  { id: -3, time: "SYSTEM", text: "Crawler ยังไม่เชื่อม จึงยังไม่อ่าน avdbapi.com อัตโนมัติ", tone: "warn" },
-  { id: -4, time: "SYSTEM", text: "MISSAV isolation เปิดอยู่ — ตาราง AVDB แยกจาก catalog เดิม", tone: "safe" },
+  { id: -1, time: "SYSTEM", text: "AVDB Staging DB พร้อมใช้งาน", tone: "safe" },
+  { id: -2, time: "SYSTEM", text: "Crawler Worker เชื่อมกับ scanner core แล้ว", tone: "safe" },
+  { id: -3, time: "SYSTEM", text: "Worker ทำทีละหน้า และใช้ concurrency 1-3 ตามค่าที่เลือก", tone: "info" },
+  { id: -4, time: "SYSTEM", text: "MISSAV isolation เปิดอยู่ — AVDB ไม่เขียนทับ catalog เดิม", tone: "safe" },
 ] as const;
 
 function runProgress(run: StageRun | null) {
@@ -149,7 +149,7 @@ export default function AvdbAdminPage() {
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(true), 6000);
+    const timer = window.setInterval(() => void refresh(true), 2500);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
@@ -158,7 +158,7 @@ export default function AvdbAdminPage() {
   const activeRun = Boolean(run && ["queued", "running", "paused"].includes(run.status));
   const canPause = Boolean(run && ["queued", "running"].includes(run.status));
   const canResume = run?.status === "paused";
-  const startValid = Number(startPage) >= 1 && Number(endPage) >= Number(startPage);
+  const startValid = Number(startPage) >= 1 && Number(endPage) >= Number(startPage) && Number(endPage) <= 10262;
 
   const tabCounts = useMemo(() => {
     const items = state?.items || [];
@@ -231,9 +231,9 @@ export default function AvdbAdminPage() {
   };
 
   const pipelineState = (key: (typeof pipeline)[number]["key"]) => {
-    if (key === "staging") return { state: "READY", tone: "ready" };
     if (key === "source") return state?.crawlerConnected ? { state: "READY", tone: "ready" } : { state: "OFFLINE", tone: "waiting" };
-    if (key === "duplicate") return state?.stats.duplicates ? { state: "ACTIVE", tone: "ready" } : { state: "WAITING", tone: "waiting" };
+    if (key === "staging") return { state: "READY", tone: "ready" };
+    if (key === "duplicate") return state?.stats.duplicates ? { state: "ACTIVE", tone: "ready" } : { state: "READY", tone: "ready" };
     if (key === "player") return state?.stats.playerReady ? { state: "ACTIVE", tone: "ready" } : { state: "WAITING", tone: "waiting" };
     return state?.stats.published ? { state: "ACTIVE", tone: "ready" } : { state: "LOCKED", tone: "locked" };
   };
@@ -244,7 +244,7 @@ export default function AvdbAdminPage() {
         <header className={styles.topbar}>
           <div className={styles.brandGroup}>
             <Link className={styles.brand} href="/admin/avdb">AVDB<span>OPS</span></Link>
-            <span className={styles.modeBadge}><i /> STAGING READY</span>
+            <span className={styles.modeBadge}><i /> CRAWLER READY</span>
           </div>
           <nav className={styles.nav} aria-label="เมนู AVDBAPI Admin">
             <Link href="/admin">Control Rooms</Link>
@@ -258,7 +258,7 @@ export default function AvdbAdminPage() {
           <div>
             <p className={styles.eyebrow}>AVDBAPI / OPERATIONS CENTER</p>
             <h1>AVDB Control Room</h1>
-            <p>Staging และ Run Control พร้อมแล้ว ขั้นนี้ใช้จัดคิวและ checkpoint ก่อนเชื่อม crawler จริง จึงยังไม่ยิง Chromium หรืออ่านข้อมูลต้นทางอัตโนมัติ</p>
+            <p>สร้าง Run แล้วแท็บ Admin นี้จะขับ Crawler ทีละหน้าอัตโนมัติ ผลที่พบถูกเขียนเข้า Staging ทันที พร้อม checkpoint, duplicate protection และ Pause/Resume โดยยังไม่ Publish</p>
           </div>
           <div className={styles.commandActions}>
             <Link className={styles.secondaryButton} href="/admin/avdb-import-test">เปิด Source Lab</Link>
@@ -266,7 +266,7 @@ export default function AvdbAdminPage() {
             {canResume ? (
               <button className={styles.startButton} type="button" disabled={actionBusy} onClick={() => void controlRun("resume")}>Resume</button>
             ) : (
-              <button className={styles.startButton} type="button" disabled={activeRun || !startValid || actionBusy} onClick={() => void createRun()}>สร้าง Run</button>
+              <button className={styles.startButton} type="button" disabled={activeRun || !startValid || actionBusy} onClick={() => void createRun()}>เริ่ม Run</button>
             )}
           </div>
         </section>
@@ -275,10 +275,10 @@ export default function AvdbAdminPage() {
         {notice ? <div className={styles.noticeBanner}>{notice}</div> : null}
 
         <section className={styles.stats} aria-label="สถานะ AVDB">
-          <article><span>DISCOVERED</span><strong>{state?.stats.discovered ?? 0}</strong><small>{loading ? "กำลังอ่านข้อมูล" : "AVDB staging items"}</small></article>
-          <article><span>STAGING</span><strong>{state?.stats.staging ?? 0}</strong><small>discovered + staged</small></article>
-          <article><span>PLAYER READY</span><strong>{state?.stats.playerReady ?? 0}</strong><small>ผ่านการตรวจ Player</small></article>
-          <article><span>PUBLISHED</span><strong>{state?.stats.published ?? 0}</strong><small>ยังไม่เปิด publish อัตโนมัติ</small></article>
+          <article><span>DISCOVERED</span><strong>{state?.stats.discovered ?? 0}</strong><small>{loading ? "กำลังอ่านข้อมูล" : "รายการที่พบทั้งหมด"}</small></article>
+          <article><span>STAGING</span><strong>{state?.stats.staging ?? 0}</strong><small>พร้อมตรวจขั้นถัดไป</small></article>
+          <article><span>PLAYER READY</span><strong>{state?.stats.playerReady ?? 0}</strong><small>รอต่อ verification</small></article>
+          <article><span>PUBLISHED</span><strong>{state?.stats.published ?? 0}</strong><small>Publish ยังล็อก</small></article>
           <article className={styles.healthStat}><span>SYSTEM</span><strong>{state?.crawlerConnected ? "READY" : "SAFE"}</strong><small>{state?.crawlerConnected ? "crawler connected" : "crawler offline"}</small></article>
         </section>
 
@@ -306,8 +306,8 @@ export default function AvdbAdminPage() {
           <section className={styles.mainColumn}>
             <article className={styles.panel}>
               <div className={styles.panelHeading}>
-                <div><p>SOURCE CONFIGURATION</p><h2>เตรียมช่วงหน้าสำหรับ Run</h2></div>
-                <span className={styles.safeBadge}>CONTROL API READY</span>
+                <div><p>SOURCE CONFIGURATION</p><h2>ช่วงหน้าที่ต้องการดึง</h2></div>
+                <span className={styles.safeBadge}>SERIAL BROWSER WORKER</span>
               </div>
 
               <div className={styles.configGrid}>
@@ -324,15 +324,15 @@ export default function AvdbAdminPage() {
                   <input disabled={activeRun} inputMode="numeric" value={endPage} onChange={(event) => setEndPage(event.target.value.replace(/\D/g, ""))} />
                 </label>
                 <label>
-                  <span>Concurrency</span>
+                  <span>API concurrency</span>
                   <select disabled={activeRun} value={concurrency} onChange={(event) => setConcurrency(event.target.value)}>
-                    <option value="1">1 เรื่องพร้อมกัน</option>
-                    <option value="2">2 เรื่องพร้อมกัน</option>
-                    <option value="3">3 เรื่องพร้อมกัน</option>
+                    <option value="1">1 รายการพร้อมกัน</option>
+                    <option value="2">2 รายการพร้อมกัน</option>
+                    <option value="3">3 รายการพร้อมกัน</option>
                   </select>
                 </label>
                 <label>
-                  <span>Retry</span>
+                  <span>Retry ต่อหน้า</span>
                   <select disabled={activeRun} value={retry} onChange={(event) => setRetry(event.target.value)}>
                     <option value="0">ไม่ Retry</option>
                     <option value="1">1 ครั้ง</option>
@@ -343,10 +343,10 @@ export default function AvdbAdminPage() {
               </div>
 
               <div className={styles.configFooter}>
-                <div><span className={styles.dot} /> Auto scan: <strong>OFF</strong></div>
+                <div><span className={styles.dot} /> Worker: <strong>{state?.crawlerConnected ? "CONNECTED" : "OFFLINE"}</strong></div>
                 <div>Staging: <strong>CONNECTED</strong></div>
-                <div>Crawler: <strong>OFFLINE</strong></div>
-                <button type="button" disabled={activeRun || !startValid || actionBusy} onClick={() => void createRun()}>สร้าง Run และบันทึกค่า</button>
+                <div>Mode: <strong>1 PAGE / STEP</strong></div>
+                <button type="button" disabled={activeRun || !startValid || actionBusy} onClick={() => void createRun()}>สร้าง Run และเริ่มดึง</button>
               </div>
             </article>
 
@@ -376,7 +376,7 @@ export default function AvdbAdminPage() {
               </div>
 
               <div className={styles.queueToolbar}>
-                <div><strong>{activeLabel}</strong><span>{filteredItems.length} รายการ</span></div>
+                <div><strong>{activeLabel}</strong><span>{filteredItems.length} รายการที่โหลดล่าสุด</span></div>
                 <div className={styles.queueActions}>
                   <button type="button" disabled={!filteredItems.length}>เลือกทั้งหมด</button>
                   <button type="button" disabled>ทดสอบ Player</button>
@@ -394,8 +394,8 @@ export default function AvdbAdminPage() {
                       <div className={styles.itemBody}>
                         <div className={styles.itemTop}><b>{item.movie_code || item.external_id || "NO CODE"}</b><span>{item.stage_status}</span></div>
                         <h3>{item.title || "ยังไม่มีชื่อ"}</h3>
-                        <p>{[item.year, item.quality, item.duration, item.player_status].filter(Boolean).join(" · ") || "รอ metadata"}</p>
-                        <small>Source page {item.source_page ?? "—"}</small>
+                        <p>{[item.year, item.quality, item.duration, item.player_provider].filter(Boolean).join(" · ") || "รอ metadata"}</p>
+                        <small>Source page {item.source_page ?? "—"} · Player {item.player_status}</small>
                       </div>
                     </article>
                   ))}
@@ -403,8 +403,8 @@ export default function AvdbAdminPage() {
               ) : (
                 <div className={styles.emptyState}>
                   <div className={styles.emptyIcon}>AV</div>
-                  <h3>{state?.items.length ? "ไม่มีรายการตรงกับตัวกรอง" : "Staging พร้อม แต่ยังไม่มีข้อมูล AVDB"}</h3>
-                  <p>{query ? `ไม่พบ “${query}” ใน ${activeLabel}` : "ขั้นถัดไปจะเชื่อม crawler ให้ข้อมูลที่พบขึ้นเป็นการ์ดตรงนี้ทันทีทีละหน้า"}</p>
+                  <h3>{state?.items.length ? "ไม่มีรายการตรงกับตัวกรอง" : "พร้อมเริ่มดึง AVDB เข้า Staging"}</h3>
+                  <p>{query ? `ไม่พบ “${query}” ใน ${activeLabel}` : "กำหนดช่วงหน้าแล้วกดสร้าง Run ข้อมูลที่พบจะขึ้นเป็นการ์ดหลังแต่ละหน้าสแกนเสร็จ โดยไม่ต้องรอทั้งชุด"}</p>
                   <Link href="/admin/avdb-import-test">เปิด Source Lab เพื่อทดสอบต้นทาง →</Link>
                 </div>
               )}
@@ -419,9 +419,13 @@ export default function AvdbAdminPage() {
                 <div><dt>Range</dt><dd>{run ? `${run.start_page}-${run.end_page}` : "—"}</dd></div>
                 <div><dt>Current page</dt><dd>{run?.current_page ?? "—"}</dd></div>
                 <div><dt>Pages scanned</dt><dd>{run?.pages_scanned ?? 0}</dd></div>
+                <div><dt>Items discovered</dt><dd>{run?.items_discovered ?? 0}</dd></div>
+                <div><dt>New staged</dt><dd>{run?.items_staged ?? 0}</dd></div>
+                <div><dt>Duplicates</dt><dd>{run?.duplicates_found ?? 0}</dd></div>
                 <div><dt>Last checkpoint</dt><dd>{run?.checkpoint_page ?? "—"}</dd></div>
                 <div><dt>Failures</dt><dd>{run?.failed_count ?? 0}</dd></div>
               </dl>
+              {run?.last_error ? <p className={styles.inlineError}>{run.last_error}</p> : null}
               <div className={styles.runActions}>
                 <button type="button" disabled={!run || actionBusy || !activeRun} onClick={() => void controlRun("checkpoint")}>Checkpoint</button>
                 <button type="button" disabled={!run || actionBusy || !activeRun} onClick={() => void controlRun("cancel")}>Cancel Run</button>
@@ -431,11 +435,11 @@ export default function AvdbAdminPage() {
             <article className={styles.sidePanel}>
               <div className={styles.panelHeadingCompact}><p>DATA RULES</p><span>ENFORCED</span></div>
               <ul className={styles.rules}>
-                <li><i>01</i><span><b>AVDB only</b>ตารางใหม่แยกจาก MISSAV</span></li>
-                <li><i>02</i><span><b>Duplicate safe</b>มี external id / dedupe index</span></li>
-                <li><i>03</i><span><b>Staging first</b>ข้อมูลใหม่เข้าจุดพักก่อน</span></li>
-                <li><i>04</i><span><b>Player verified</b>Publish ยังล็อก</span></li>
-                <li><i>05</i><span><b>Checkpoint</b>บันทึก run state ลง Supabase</span></li>
+                <li><i>01</i><span><b>AVDB only</b>ตาราง Staging แยกจาก MISSAV</span></li>
+                <li><i>02</i><span><b>Duplicate safe</b>external id + code/slug/title</span></li>
+                <li><i>03</i><span><b>Staging first</b>พบแล้วขึ้นการ์ดทันทีหลังจบหน้า</span></li>
+                <li><i>04</i><span><b>Failure safe</b>Retry ครบแล้ว Pause ที่หน้าเดิม</span></li>
+                <li><i>05</i><span><b>Checkpoint</b>Resume ต่อจากหน้าที่ยังค้าง</span></li>
               </ul>
             </article>
 
@@ -443,7 +447,7 @@ export default function AvdbAdminPage() {
               <div className={styles.panelHeadingCompact}><p>LIVE LOG</p><span>{state?.logs.length ? "DATABASE" : "SYSTEM"}</span></div>
               <div className={styles.logs}>
                 {state?.logs.length
-                  ? state.logs.slice(0, 16).map((entry) => (
+                  ? state.logs.slice(0, 18).map((entry) => (
                       <div className={styles.logLine} key={entry.id}>
                         <span>{new Date(entry.created_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}</span>
                         <p className={styles[`log_${entry.level}`]}>{entry.message}</p>
@@ -461,8 +465,8 @@ export default function AvdbAdminPage() {
         </div>
 
         <footer className={styles.footerNote}>
-          <strong>STAGING + CONTROL READY</strong>
-          <span>ตาราง `avdb_stage_runs`, `avdb_stage_items`, `avdb_stage_logs` พร้อมแล้ว และหน้า Admin คุม Run/Checkpoint ได้จริง ขั้นต่อไปคือเชื่อม `/api/avdb-scan` ให้ทำงานทีละหน้าแล้วเขียนผลเข้า Staging โดยยังคง concurrency ต่ำและหยุดต่อได้</span>
+          <strong>CRAWLER + STAGING READY</strong>
+          <span>Run ทำงานแบบ 1 หน้า/1 server request เพื่อหลีกเลี่ยง Chromium ซ้อนกันบน Vercel ขณะ Run อยู่ควรเปิดหน้า Admin นี้ไว้; สามารถ Pause ปิดแท็บ แล้วกลับมา Resume จาก checkpoint ได้ โดย Player verification และ Publish ยังไม่เปิดในรอบนี้</span>
         </footer>
       </div>
     </main>
