@@ -13,6 +13,11 @@ type Upload18AuthResult = {
   pageStatus?: number;
 };
 
+type LoginSaveResult = {
+  success: boolean;
+  message: string;
+};
+
 function isUpload18Url(raw: string) {
   try {
     const url = new URL(raw);
@@ -23,24 +28,48 @@ function isUpload18Url(raw: string) {
   }
 }
 
-function isUpload18LoginUrl(raw: string) {
+function upload18Path(raw: string) {
   try {
     const url = new URL(raw);
-    return isUpload18Url(raw) && /^\/login(?:\/|$)/i.test(url.pathname);
+    return isUpload18Url(raw) ? url.pathname : "";
   } catch {
-    return false;
+    return "";
   }
+}
+
+function isUpload18LoginUrl(raw: string) {
+  return /^\/login\/?$/i.test(upload18Path(raw));
+}
+
+function isUpload18LoginSaveUrl(raw: string) {
+  return /^\/login\/save\/?$/i.test(upload18Path(raw));
 }
 
 async function isUpload18LoginPage(page: Page) {
   if (!isUpload18Url(page.url())) return false;
   if (isUpload18LoginUrl(page.url())) return true;
+  if (isUpload18LoginSaveUrl(page.url())) return false;
   return page.evaluate(() => {
     const title = document.title.toLowerCase();
     const hasPassword = Boolean(document.querySelector('input[type="password"]'));
     const hasUser = Boolean(document.querySelector('input[type="text"],input[name*=user i],input[name*=email i]'));
     return title.includes("login") && hasPassword && hasUser;
   }).catch(() => false);
+}
+
+async function readLoginSaveResult(page: Page): Promise<LoginSaveResult | null> {
+  if (!isUpload18LoginSaveUrl(page.url())) return null;
+  const text = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
+  if (!text.trim()) return null;
+  try {
+    const payload = JSON.parse(text) as { code?: unknown; msg?: unknown; message?: unknown; success?: unknown };
+    const message = String(payload.msg ?? payload.message ?? "").trim();
+    const code = Number(payload.code);
+    const success = payload.success === true || code === 1 || /success|successful|welcome|logged\s*in/i.test(message);
+    return { success, message };
+  } catch {
+    return null;
+  }
 }
 
 function sleep(ms: number) {
@@ -89,17 +118,11 @@ async function submitLogin(page: Page, username: string, password: string) {
 export async function ensureUpload18Authenticated(page: Page, targetUrl: string): Promise<Upload18AuthResult> {
   if (!isUpload18Url(targetUrl)) return { handled: false, authenticated: true };
 
-  // A warm Browser Session that has already proved its Upload18 login may skip
-  // the delayed-gate preflight. If Upload18 sends it back to /login anyway, the
-  // cache is invalidated immediately.
   if (upload18AuthValidatedUntil > Date.now()) {
     if (!(await isUpload18LoginPage(page))) return { handled: true, authenticated: true };
     upload18AuthValidatedUntil = 0;
   }
 
-  // Upload18's /play page can render first and redirect to /login a few seconds
-  // later. Wait for that gate before concluding the current browser context is
-  // already authenticated.
   if (!(await isUpload18LoginPage(page))) {
     await sleep(AUTH_PREFLIGHT_MS);
     if (!(await isUpload18LoginPage(page))) {
@@ -116,10 +139,18 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
   }
 
   const loginNavigation = await submitLogin(page, username, password);
-  await sleep(AUTH_STABILITY_MS);
-  if (await isUpload18LoginPage(page)) {
+  const saveResult = await readLoginSaveResult(page);
+  if (saveResult && !saveResult.success) {
     upload18AuthValidatedUntil = 0;
     return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
+  }
+
+  if (!saveResult) {
+    await sleep(AUTH_STABILITY_MS);
+    if (await isUpload18LoginPage(page)) {
+      upload18AuthValidatedUntil = 0;
+      return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
+    }
   }
 
   let targetStatus = loginNavigation?.status();
