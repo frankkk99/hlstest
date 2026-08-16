@@ -118,7 +118,8 @@ function isManifestUrl(raw: string) {
   try {
     return (
       isAllowedMediaUrl(raw) &&
-      (/\.m3u8(?:$|\?)/i.test(raw) || /\/playlist(?:\/|\.|$)/i.test(new URL(raw).pathname))
+      (/\.m3u8(?:$|\?)/i.test(raw) || /\/playlist(?:\/|\.|$)/i.test(new URL(raw).pathname) ||
+        /^\/(?:m|p)\//i.test(new URL(raw).pathname))
     );
   } catch {
     return false;
@@ -309,6 +310,125 @@ async function inspectManifestAndFirstSegment(page: Page, manifestUrl: string) {
     });
 }
 
+type DirectManifestCheck = {
+  manifest: MediaDiagnostics["manifest"];
+  segment: MediaDiagnostics["segment"];
+};
+
+function firstMediaUrl(body: string, baseUrl: string) {
+  const map = body.match(/#EXT-X-MAP:[^\n]*URI="([^"]+)"/i)?.[1];
+  if (map) return new URL(map, baseUrl).toString();
+  const line = body
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .find((value) => value && !value.startsWith("#"));
+  return line ? new URL(line, baseUrl).toString() : null;
+}
+
+async function inspectManifestDirect(manifestUrl: string, referer: string, userAgent: string): Promise<DirectManifestCheck | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 18000);
+  const headers = {
+    Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
+    Referer: referer,
+    "User-Agent": userAgent,
+  };
+
+  try {
+    async function getText(url: string) {
+      const response = await fetch(url, { headers, redirect: "follow", cache: "no-store", signal: controller.signal });
+      const body = await response.text();
+      return {
+        response,
+        body,
+        check: {
+          url,
+          status: response.status,
+          contentType: response.headers.get("content-type") || "",
+          bytes: body.length,
+        },
+      };
+    }
+
+    let playlistUrl = manifestUrl;
+    let playlist = await getText(playlistUrl);
+    if (!playlist.response.ok || (!/m3u8|mpegurl/i.test(playlist.check.contentType) && !/\.m3u8(?:$|\?)/i.test(playlistUrl))) {
+      return null;
+    }
+
+    let segmentUrl = firstMediaUrl(playlist.body, playlistUrl);
+    for (let depth = 0; segmentUrl && depth < 3; depth += 1) {
+      if (!/\.m3u8(?:$|\?)/i.test(segmentUrl)) break;
+      const child = await getText(segmentUrl);
+      if (!child.response.ok) return null;
+      playlistUrl = segmentUrl;
+      playlist = child;
+      segmentUrl = firstMediaUrl(playlist.body, playlistUrl);
+    }
+
+    if (!segmentUrl) return null;
+    const segmentResponse = await fetch(segmentUrl, {
+      headers: { ...headers, Range: "bytes=0-65535" },
+      redirect: "follow",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const segmentBytes = new Uint8Array(await segmentResponse.arrayBuffer());
+    const contentType = segmentResponse.headers.get("content-type") || "";
+    const sample = new TextDecoder().decode(segmentBytes.subarray(0, 64)).trim().toLowerCase();
+    const looksLikeHtml = /text\/html/i.test(contentType) || sample.startsWith("<!doctype") || sample.startsWith("<html");
+    if (!segmentResponse.ok || !segmentBytes.byteLength || looksLikeHtml) return null;
+
+    return {
+      manifest: playlist.check,
+      segment: {
+        url: segmentUrl,
+        status: segmentResponse.status,
+        contentType,
+        bytes: segmentBytes.byteLength,
+      },
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolvePublicUpload18Manifest(pageUrl: string, userAgent: string) {
+  try {
+    const response = await fetch(pageUrl, {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
+        Referer: "https://upload18.org/",
+        "User-Agent": userAgent,
+      },
+      redirect: "follow",
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const html = await response.text();
+    const configText = html.match(/window\.PLAYER_CONFIG\s*=\s*(\{[\s\S]*?\});/)?.[1];
+    if (!configText) return null;
+    const config = JSON.parse(configText) as { m3u8?: unknown };
+    const manifestUrl = String(config.m3u8 || "").trim();
+    if (!isManifestUrl(manifestUrl)) return null;
+    const diagnostics = await inspectManifestDirect(manifestUrl, response.url || pageUrl, userAgent);
+    if (!diagnostics) return null;
+    return {
+      url: manifestUrl,
+      status: diagnostics.manifest.status,
+      contentType: diagnostics.manifest.contentType,
+      diagnostics,
+      finalPageUrl: response.url || pageUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function isRetryableBrowserError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /detached|target closed|browser.*(?:closed|disconnected)|insufficient[_ ]resources|execution context was destroyed|protocol error|frame was detached|navigation.*failed/i.test(
@@ -405,20 +525,32 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
     let pageStatus = navigation?.status() ?? 0;
 
     const upload18Auth = await ensureUpload18Authenticated(page, pageUrl);
+    let directFallback: Awaited<ReturnType<typeof resolvePublicUpload18Manifest>> = null;
     if (!upload18Auth.authenticated) {
-      throw new BrowserSessionError(upload18AuthMessage(upload18Auth.reason), "auth", false);
+      directFallback = await resolvePublicUpload18Manifest(pageUrl, userAgent);
+      if (!directFallback) {
+        throw new BrowserSessionError(upload18AuthMessage(upload18Auth.reason), "auth", false);
+      }
     }
     if (typeof upload18Auth.pageStatus === "number") pageStatus = upload18Auth.pageStatus;
 
-    await new Promise((resolve) => setTimeout(resolve, mediaHint && isManifestUrl(mediaHint) ? 1000 : 1500));
-    await kickMediaPlayback(page);
+    if (!directFallback) {
+      await new Promise((resolve) => setTimeout(resolve, mediaHint && isManifestUrl(mediaHint) ? 1000 : 1500));
+      await kickMediaPlayback(page);
+    }
 
     const hintIsValid = Boolean(mediaHint && isManifestUrl(mediaHint));
-    if (!hintIsValid) await waitForMedia(page, 12000);
+    if (!directFallback && !hintIsValid) await waitForMedia(page, 12000);
 
-    const finalPageUrl = page.url();
+    const finalPageUrl = directFallback?.finalPageUrl || page.url();
     const media = [...captured.values()].filter((item) => item.status < 400);
-    const candidates = [
+    const candidates: Array<{
+      url: string;
+      status: number;
+      contentType: string;
+      diagnostics?: MediaDiagnostics;
+    }> = [
+      ...(directFallback ? [directFallback] : []),
       ...(hintIsValid ? [{ url: mediaHint, status: 200, contentType: "application/vnd.apple.mpegurl" }] : []),
       ...media,
     ].filter((candidate, index, list) => list.findIndex((item) => item.url === candidate.url) === index);
@@ -427,10 +559,12 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
     let diagnostics: MediaDiagnostics | null = null;
     const failures: string[] = [];
     for (const candidate of candidates) {
-      const check = await inspectManifestAndFirstSegment(page, candidate.url);
+      const check = candidate.diagnostics
+        ? { ok: true as const, manifest: candidate.diagnostics.manifest, segment: candidate.diagnostics.segment }
+        : await inspectManifestAndFirstSegment(page, candidate.url);
       if (check.ok) {
         manifest = candidate;
-        diagnostics = check;
+        diagnostics = { manifest: check.manifest, segment: check.segment };
         break;
       }
       failures.push(`${candidate.url}: ${check.error}`);
