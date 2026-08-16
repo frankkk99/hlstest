@@ -3,8 +3,8 @@ import "./globals.css";
 import ToolNav from "./components/ToolNav";
 
 export const metadata: Metadata = {
-  title: "HLS Test Lab",
-  description: "AVDB import, HLS diagnostics and embed testing",
+  title: "Player Gateway",
+  description: "dev2u.online Player Gateway for shared playback sessions, embeds and AVDB playback",
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
