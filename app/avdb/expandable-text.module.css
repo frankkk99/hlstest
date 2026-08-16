@@ -1,0 +1,20 @@
+.wrap { min-width: 0; }
+.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--expand-lines, 3);
+  overflow: hidden;
+}
+.expanded { display: block; overflow: visible; }
+.toggle {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  color: #f4a24e;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.toggle:hover { color: #ffc27f; }
