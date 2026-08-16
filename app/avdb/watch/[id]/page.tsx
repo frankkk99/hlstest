@@ -193,7 +193,7 @@ export default function AvdbWatchPage() {
     }
   }
 
-  if (loading) return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>AVDB INDEX</strong><p>กำลังโหลดรายการ…</p></div></div></main>;
+  if (loading) return <main className={styles.page}><div className={styles.routeLoading} role="status" aria-label="กำลังโหลด"><span className={styles.routeSpinner} aria-hidden="true" /></div></main>;
 
   if (!item) return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>ไม่พบรายการนี้</strong><p>{message}</p><Link href="/avdb">กลับหน้าแรก</Link></div></div></main>;
 
