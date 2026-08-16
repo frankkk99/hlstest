@@ -1,26 +1,66 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import AdminShell from "./admin-shell";
-import styles from "./admin.module.css";
+import styles from "./admin-gateway.module.css";
 
-type Overview = { configured: boolean; activeTitles: number; hiddenTitles: number; readyTitles: number; noPlayerTitles: number; brokenTitles: number; unknownTitles: number; movieTitles: number; seriesTitles: number; sourceCount: number; sourceStatus: Record<string, number>; lastCheckedAt: string };
-const emptyOverview: Overview = { configured: false, activeTitles: 0, hiddenTitles: 0, readyTitles: 0, noPlayerTitles: 0, brokenTitles: 0, unknownTitles: 0, movieTitles: 0, seriesTitles: 0, sourceCount: 0, sourceStatus: {}, lastCheckedAt: "" };
+export default function AdminSourceGateway() {
+  return (
+    <main className={styles.page}>
+      <div className={styles.shell}>
+        <header className={styles.topbar}>
+          <Link className={styles.brand} href="/">HLS<span>HUB</span> / ADMIN</Link>
+          <button
+            className={styles.logout}
+            type="button"
+            onClick={async () => {
+              await fetch("/api/admin/logout", { method: "POST" });
+              window.location.href = "/";
+            }}
+          >
+            ออกจากระบบ
+          </button>
+        </header>
 
-export default function AdminPage() {
-  const [overview, setOverview] = useState<Overview>(emptyOverview);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  async function load() { setLoading(true); setError(""); try { const response = await fetch("/api/admin/overview", { cache: "no-store" }); const data = await response.json() as { ok?: boolean; error?: string; overview?: Overview }; if (!response.ok || !data.ok || !data.overview) throw new Error(data.error || "อ่านข้อมูลภาพรวมไม่สำเร็จ"); setOverview(data.overview); } catch (loadError) { setError(loadError instanceof Error ? loadError.message : "อ่านข้อมูลภาพรวมไม่สำเร็จ"); } finally { setLoading(false); } }
-  useEffect(() => { void load(); }, []);
-  const readyPercent = useMemo(() => overview.activeTitles ? Math.round((overview.readyTitles / overview.activeTitles) * 100) : 0, [overview]);
-  const sourceTotal = Math.max(1, overview.sourceCount);
-  return <AdminShell title="ระบบหลังบ้าน" description="ศูนย์กลางดูสถานะรายการ, คัดกรองเรื่องที่พร้อมรับชม และเข้าถึงเครื่องมือเดิมโดยไม่เปลี่ยน flow ของเดิม">
-    {loading ? <div className={styles.loading}>กำลังอ่านสถานะจากฐานข้อมูล...</div> : error ? <div className={styles.error}>{error} <button className={styles.button} type="button" onClick={() => void load()}>ลองใหม่</button></div> : <>
-      <section className={styles.metricGrid}><article className={styles.metric}><span>รายการเปิดใช้งาน</span><strong>{overview.activeTitles.toLocaleString()}</strong><small>ที่อยู่ในระบบกลาง</small></article><article className={styles.metric}><span>พร้อมรับชม</span><strong className={styles.good}>{overview.readyTitles.toLocaleString()}</strong><small>{readyPercent}% ของรายการเปิดใช้งาน</small></article><article className={styles.metric}><span>ไม่มี Player พร้อมใช้</span><strong className={styles.warn}>{overview.noPlayerTitles.toLocaleString()}</strong><small>ไม่ถูกส่งไปหน้าเว็บ</small></article><article className={styles.metric}><span>Player มีปัญหา</span><strong className={styles.bad}>{overview.brokenTitles.toLocaleString()}</strong><small>blocked / error / expired</small></article><article className={styles.metric}><span>ถูกซ่อน</span><strong className={styles.blue}>{overview.hiddenTitles.toLocaleString()}</strong><small>ไม่แสดงใน catalog</small></article><article className={styles.metric}><span>Sources</span><strong>{overview.sourceCount.toLocaleString()}</strong><small>เฉพาะระดับเรื่อง</small></article></section>
-      <section className={styles.sectionGrid}><div className={styles.panel}><div className={styles.panelHeader}><div><h2>ทางลัดจัดการ</h2><p>เลือกหน้าที่ต้องการทำงานต่อได้ทันที</p></div><button className={styles.button} type="button" onClick={() => void load()}>รีเฟรช</button></div><div className={styles.linkGrid}><Link className={styles.actionCard} href="/admin/catalog"><strong>จัดการรายการหนัง</strong><span>ค้นหา กรองเรื่องที่ไม่มี Player และซ่อน/แสดงรายการ</span></Link><Link className={styles.actionCard} href="/admin/test-all"><strong>ทดสอบหนังทั้งหมด</strong><span>โหลดรายการจากคลังแล้วเช็ก Player สดทุกเรื่องด้วยปุ่มเดียว</span></Link><Link className={styles.actionCard} href="/admin/health"><strong>ตรวจ Player Health</strong><span>ดูสรุป PASS, blocked, error, expired และ unknown</span></Link><Link className={styles.actionCard} href="/admin/tools"><strong>เครื่องมือเดิม</strong><span>HLS Test, AVDB Import, Bulk Test, Extractor และ Embed Test</span></Link><Link className={styles.actionCard} href="/admin/system"><strong>ตรวจระบบ</strong><span>ดูสถานะการเชื่อมต่อและเส้นทางหน้าสาธารณะ</span></Link></div></div><div className={styles.panel}><div className={styles.panelHeader}><div><h2>สถานะ Source</h2><p>นับจาก player_sources ระดับเรื่อง</p></div></div><div className={styles.barList}>{[["pass", "PASS"], ["blocked", "BLOCKED"], ["error", "ERROR"], ["expired", "EXPIRED"], ["unknown", "UNKNOWN"]].map(([key, label]) => <div className={styles.barRow} key={key}><span>{label}</span><div className={styles.barTrack}><span style={{ width: `${Math.min(100, ((overview.sourceStatus[key] || 0) / sourceTotal) * 100)}%` }} /></div><strong>{overview.sourceStatus[key] || 0}</strong></div>)}</div></div></section>
-      <section className={styles.panel} style={{ marginTop: 14 }}><div className={styles.panelHeader}><div><h2>กติกาหน้าเว็บสาธารณะ</h2><p>ระบบจะส่งออกเฉพาะรายการที่มี source ผ่านและมีหน้า Player ต้นทางเท่านั้น</p></div><span className={`${styles.statusPill} ${styles.good}`}>ACTIVE</span></div><ul className={styles.list}><li><span>แสดงบน /hub, หนังทั้งหมด, ซีรีส์</span><strong>status = pass + player_page_url</strong></li><li><span>ไม่มี Player / Player ไม่ผ่าน</span><strong>ไม่แสดง</strong></li><li><span>รายการที่แอดมินซ่อน</span><strong>is_active = false</strong></li></ul></section>
-    </>}
-  </AdminShell>;
+        <section className={styles.hero}>
+          <p className={styles.kicker}>SELECT CONTROL ROOM</p>
+          <h1 className={styles.title}>สองแหล่ง สองระบบหลังบ้าน</h1>
+          <p className={styles.subtitle}>
+            MISSAV และ AVDBAPI แยก workflow, สถานะข้อมูล และเครื่องมือออกจากกัน เพื่อป้องกันการ merge หรือดึงข้อมูลข้ามแหล่งโดยไม่ตั้งใจ
+          </p>
+        </section>
+
+        <section className={styles.grid} aria-label="เลือก Control Room">
+          <Link className={`${styles.card} ${styles.missav}`} href="/admin/missav">
+            <div className={styles.cardTop}>
+              <span className={styles.badge}>LIVE CATALOG</span>
+              <h2>MISSAV</h2>
+              <p>ระบบ production ที่มี catalog และ Player health อยู่แล้ว ใช้สำหรับดูแลรายการที่เผยแพร่บน /hub เท่านั้น</p>
+              <div className={styles.stats}>
+                <div className={styles.stat}><span>STATE</span><strong>LIVE</strong></div>
+                <div className={styles.stat}><span>PUBLIC</span><strong>/hub</strong></div>
+                <div className={styles.stat}><span>DATA</span><strong>DB</strong></div>
+              </div>
+            </div>
+            <div className={styles.cardBottom}><span>เปิด MISSAV Control Room</span><span className={styles.arrow}>→</span></div>
+          </Link>
+
+          <Link className={`${styles.card} ${styles.avdb}`} href="/admin/avdb">
+            <div className={styles.cardTop}>
+              <span className={styles.badge}>PRE-IMPORT</span>
+              <h2>AVDBAPI</h2>
+              <p>พื้นที่เตรียม pipeline ใหม่ แยกจาก MISSAV โดยสมบูรณ์ ตอนนี้ยังไม่เปิดการดึงข้อมูลอัตโนมัติและยังไม่ publish catalog</p>
+              <div className={styles.stats}>
+                <div className={styles.stat}><span>STATE</span><strong>PAUSED</strong></div>
+                <div className={styles.stat}><span>PUBLIC</span><strong>/avdb</strong></div>
+                <div className={styles.stat}><span>IMPORT</span><strong>OFF</strong></div>
+              </div>
+            </div>
+            <div className={styles.cardBottom}><span>เปิด AVDBAPI Control Room</span><span className={styles.arrow}>→</span></div>
+          </Link>
+        </section>
+
+        <p className={styles.note}>การเข้าหน้า AVDBAPI public หรือ admin จะไม่เรียก /api/avdb-scan อัตโนมัติ การดึงข้อมูลต้องเริ่มจาก action แบบ manual เท่านั้น</p>
+      </div>
+    </main>
+  );
 }
