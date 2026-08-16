@@ -108,6 +108,30 @@ function matchesFilter(item: CatalogItem, filter: QuickFilter) {
   return true;
 }
 
+function StorefrontSkeleton() {
+  return (
+    <main className={ui.pageSkeleton} aria-label="กำลังโหลดหน้า AVDB">
+      <div className={ui.skeletonShell}>
+        <div className={ui.skeletonHero} />
+        <div className={ui.skeletonChips}>
+          {Array.from({ length: 7 }, (_, index) => <span className={ui.skeletonChip} key={index} />)}
+        </div>
+        <div className={`${ui.skeletonLine} ${ui.skeletonLineWide}`} />
+        <div className={`${ui.skeletonLine} ${ui.skeletonLineShort}`} />
+        <div className={ui.skeletonGrid}>
+          {Array.from({ length: 12 }, (_, index) => (
+            <div className={ui.skeletonCard} key={index}>
+              <div className={ui.skeletonCardImage} />
+              <span className={ui.skeletonCardLine} />
+              <span className={ui.skeletonCardLine} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}
+
 function MovieCard({ item, onSelect, compact = false }: { item: CatalogItem; onSelect: (item: CatalogItem) => void; compact?: boolean }) {
   return (
     <button className={`${styles.card} ${compact ? styles.cardCompact : ""}`} type="button" onClick={() => onSelect(item)}>
@@ -219,6 +243,8 @@ export default function AvdbStorefrontPage() {
     setFilter("all");
     setSelectedCategory((current) => current === value ? "" : value);
   }
+
+  if (loading && !items.length && !error) return <StorefrontSkeleton />;
 
   return (
     <main className={styles.storefront}>
