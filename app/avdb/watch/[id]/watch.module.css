@@ -41,10 +41,10 @@
   background: #050608;
   box-shadow: 0 24px 70px rgba(0,0,0,.4);
 }
-.videoSurface { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; transition: opacity .42s ease; }
+.videoSurface { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; transition: opacity .2s ease; }
 .videoWaiting { opacity: 0; }
 .videoReady { opacity: 1; }
-.loadingPoster { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: #050608; opacity: 1; filter: blur(0); transition: opacity .42s ease, filter .42s ease; pointer-events: none; }
+.loadingPoster { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: #050608; opacity: 1; filter: blur(0); transition: opacity .2s ease, filter .2s ease; pointer-events: none; }
 .loadingPoster img { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(1); animation: loadingPosterZoom 5.6s ease-in-out infinite alternate; will-change: transform; }
 .loadingPoster::after { content: ""; position: absolute; inset: -35%; background: linear-gradient(105deg,transparent 36%,rgba(255,255,255,.07) 48%,rgba(255,255,255,.13) 52%,transparent 64%); transform: translateX(-62%); animation: loadingPosterShimmer 2.2s ease-in-out infinite; pointer-events: none; }
 .loadingPosterFade { opacity: 0; filter: blur(1.5px); }
@@ -56,7 +56,7 @@
 .playButton:hover { background: #ffb76e; box-shadow: 0 14px 36px rgba(0,0,0,.34); transform: none; }
 .playButton:active { transform: none; }
 .playButton:focus-visible { outline: 2px solid #fff; outline-offset: 4px; }
-.loadingOverlay { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 10px; padding: 0 15px 15px; background: linear-gradient(180deg,rgba(0,0,0,.08) 35%,rgba(0,0,0,.62)); opacity: 1; transition: opacity .32s ease; pointer-events: none; }
+.loadingOverlay { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 10px; padding: 0 15px 15px; background: linear-gradient(180deg,rgba(0,0,0,.08) 35%,rgba(0,0,0,.62)); opacity: 1; transition: opacity .18s ease; pointer-events: none; }
 .loadingOverlayFade { opacity: 0; }
 .loadingText { align-self: center; max-width: min(720px,92%); color: #fff; text-align: center; font-size: 12px; font-weight: 800; line-height: 1.5; text-shadow: 0 2px 12px rgba(0,0,0,.8); }
 .progressTrack { width: 100%; height: 3px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.15); }
