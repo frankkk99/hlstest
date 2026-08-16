@@ -1,6 +1,7 @@
 import type { Page } from "puppeteer-core";
 
 const UPLOAD18_HOST = "upload18.org";
+const AUTH_STABILITY_MS = 6500;
 
 type Upload18AuthResult = {
   handled: boolean;
@@ -93,10 +94,10 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
   }
 
   const loginNavigation = await submitLogin(page, username, password);
-  // Upload18 can briefly leave /login and then redirect back after its session
-  // check. Wait long enough for that client/server redirect to settle before
-  // treating the login as successful.
-  await sleep(2500);
+  // Upload18 can briefly leave /login and redirect back several seconds later.
+  // Only accept the login after the page remains outside the login gate for a
+  // full stability window.
+  await sleep(AUTH_STABILITY_MS);
   if (await isUpload18LoginPage(page)) {
     return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
   }
@@ -107,10 +108,9 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
     targetStatus = targetNavigation?.status();
   }
 
-  // Verify the authenticated session survives a fresh request to the original
-  // Player URL. This prevents a late redirect back to /login from being
-  // misclassified as a Player/HLS failure.
-  await sleep(2500);
+  // Confirm the same authenticated browser context survives a fresh request to
+  // the original Player URL before Browser Session starts waiting for HLS.
+  await sleep(AUTH_STABILITY_MS);
   if (await isUpload18LoginPage(page)) {
     return { handled: true, authenticated: false, reason: "session-not-persisted", pageStatus: targetStatus };
   }
