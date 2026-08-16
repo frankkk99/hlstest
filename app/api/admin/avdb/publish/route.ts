@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminRequest } from "@/lib/admin-api";
-import {
-  fetchAvdbPublishState,
-  publishAvdbReadyItems,
-  unpublishAvdbCatalogItem,
-} from "@/lib/avdb-catalog";
+import { unpublishAvdbCatalogItem } from "@/lib/avdb-catalog";
+import { fetchAvdbLivePublishState, publishAvdbLiveItems } from "@/lib/avdb-live-publish";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +12,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const state = await fetchAvdbPublishState();
+    const state = await fetchAvdbLivePublishState();
     return NextResponse.json({ ok: true, ...state }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json(
@@ -37,12 +34,12 @@ export async function POST(request: NextRequest) {
     if (action === "publish") {
       const itemId = String(body?.itemId || "").trim();
       if (!itemId) throw new Error("ไม่พบ itemId");
-      const result = await publishAvdbReadyItems({ itemIds: [itemId], limit: 1 });
+      const result = await publishAvdbLiveItems({ itemIds: [itemId], limit: 1 });
       return NextResponse.json({ ok: true, ...result });
     }
 
     if (action === "publish_batch") {
-      const result = await publishAvdbReadyItems({ limit: body?.limit ?? 50 });
+      const result = await publishAvdbLiveItems({ limit: body?.limit ?? 50 });
       return NextResponse.json({ ok: true, ...result });
     }
 
