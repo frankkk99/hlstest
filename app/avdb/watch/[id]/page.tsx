@@ -76,7 +76,7 @@ export default function AvdbWatchPage() {
         setItem(detail.item);
         setRelated((catalog.items || []).filter((entry) => entry.id !== detail.item?.id).slice(0, 6));
         setProvider(detail.item.player_provider || null);
-        setMessage("VERIFIED SOURCE READY");
+        setMessage("LIVE SOURCE READY");
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : "เปิดรายการนี้ไม่สำเร็จ");
       } finally {
@@ -134,7 +134,7 @@ export default function AvdbWatchPage() {
     const run = ++runRef.current;
     setRequested(true);
     setStarting(true);
-    setMessage(attempt ? "RETRYING FRESH SESSION" : "PREPARING VERIFIED SOURCE");
+    setMessage(attempt ? "RETRYING FRESH SESSION" : "PREPARING LIVE SOURCE");
     stopVideo();
 
     try {
@@ -216,7 +216,7 @@ export default function AvdbWatchPage() {
 
       <div className={styles.shell}>
         <div className={styles.topline}>
-          <span>AVDB / VERIFIED WATCH</span>
+          <span>AVDB / LIVE WATCH</span>
           <span>{item.movie_code || item.external_id || item.id.slice(0, 8)}</span>
         </div>
 
@@ -247,7 +247,7 @@ export default function AvdbWatchPage() {
               {item.year ? <span>{item.year}</span> : null}
               {item.quality ? <span>{item.quality}</span> : null}
               {item.duration ? <span>{item.duration}</span> : null}
-              <span>PLAYER VERIFIED</span>
+              <span>LIVE SOURCE</span>
             </div>
             {item.description ? <p className={styles.description}>{item.description}</p> : null}
           </section>
@@ -256,8 +256,8 @@ export default function AvdbWatchPage() {
             <div className={styles.statusHead}><span>PLAYBACK SESSION</span><b>{starting ? "WORKING" : started ? "LIVE" : "READY"}</b></div>
             <div className={styles.statusRows}>
               <div><span>Catalog</span><strong>Published</strong></div>
-              <div><span>Player Gate</span><strong>Passed</strong></div>
-              <div><span>Provider</span><strong>{provider || "verified source"}</strong></div>
+              <div><span>Resolver</span><strong>On demand</strong></div>
+              <div><span>Provider</span><strong>{provider || "source"}</strong></div>
               <div><span>Session</span><strong>Fresh on watch</strong></div>
             </div>
             <p className={styles.statusMessage}>{message}</p>
@@ -266,7 +266,7 @@ export default function AvdbWatchPage() {
 
         {related.length ? (
           <section className={styles.related}>
-            <div className={styles.sectionHead}><h2>MORE FROM AVDB</h2><span>PUBLISHED + VERIFIED ONLY</span></div>
+            <div className={styles.sectionHead}><h2>MORE FROM AVDB</h2><span>PUBLISHED CATALOG</span></div>
             <div className={styles.grid}>
               {related.map((entry) => (
                 <Link className={styles.card} href={`/avdb/watch/${entry.id}`} key={entry.id}>
