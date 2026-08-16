@@ -94,6 +94,25 @@ export async function GET(request: NextRequest) {
     const navigation = await page.goto(item.player_page_url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await new Promise((resolve) => setTimeout(resolve, 1800));
 
+    const gate = await page.evaluate(() => {
+      const clean = (value: string) => value.replace(/\s+/g, " ").trim();
+      const controls = Array.from(document.querySelectorAll("button,input[type=submit],input[type=button],a"))
+        .map((element) => {
+          const text = element instanceof HTMLInputElement ? element.value : element.textContent || "";
+          return clean(text).slice(0, 80);
+        })
+        .filter(Boolean)
+        .slice(0, 20);
+      return {
+        title: clean(document.title).slice(0, 120),
+        passwordInputs: document.querySelectorAll('input[type="password"]').length,
+        textInputs: document.querySelectorAll('input[type="text"],input:not([type])').length,
+        forms: document.querySelectorAll("form").length,
+        controls,
+        bodyPreview: clean(document.body?.innerText || "").slice(0, 600),
+      };
+    }).catch(() => ({ title: "", passwordInputs: 0, textInputs: 0, forms: 0, controls: [] as string[], bodyPreview: "" }));
+
     async function inspectFrames() {
       const details = [] as Array<{ host: string; videos: number; sources: number; iframes: string[] }>;
       for (const frame of page.frames()) {
@@ -136,7 +155,7 @@ export async function GET(request: NextRequest) {
       ok: true,
       pageStatus: navigation?.status() ?? 0,
       finalHost: hostname(page.url()),
-      titleLength: (await page.title().catch(() => "")).length,
+      gate,
       frameCount: page.frames().length,
       before,
       after,
