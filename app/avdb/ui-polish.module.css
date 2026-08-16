@@ -1,0 +1,83 @@
+.cardTitle3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  min-height: 48px;
+}
+
+.modalShell {
+  display: block !important;
+  width: min(780px, 100%) !important;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto !important;
+}
+
+.modalMedia {
+  width: 100%;
+  min-height: 0 !important;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #0d1015;
+}
+
+.modalMedia img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.modalBody { overflow: visible !important; padding: 24px 26px 26px !important; }
+.modalTitleText { margin: 9px 0 0 !important; }
+.modalDescriptionText { margin: 14px 0 0 !important; }
+
+.pageSkeleton {
+  min-height: 100vh;
+  padding: 72px 20px 60px;
+  color: #fff;
+  background: #0a0c10;
+}
+
+.skeletonShell { width: min(1360px, 100%); margin: 0 auto; }
+.skeletonHero,
+.skeletonLine,
+.skeletonChip,
+.skeletonCardImage,
+.skeletonCardLine {
+  background: linear-gradient(100deg, rgba(255,255,255,.045) 20%, rgba(255,255,255,.11) 38%, rgba(255,255,255,.045) 56%);
+  background-size: 240% 100%;
+  animation: avdbShimmer 1.35s linear infinite;
+}
+.skeletonHero { width: 100%; aspect-ratio: 16 / 5; border-radius: 22px; }
+.skeletonLine { height: 12px; border-radius: 999px; }
+.skeletonLineWide { width: min(420px, 72%); margin-top: 18px; }
+.skeletonLineShort { width: 180px; margin-top: 9px; }
+.skeletonChips { display: flex; gap: 8px; margin: 18px 0; overflow: hidden; }
+.skeletonChip { flex: 0 0 88px; height: 34px; border-radius: 999px; }
+.skeletonGrid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 12px; margin-top: 20px; }
+.skeletonCard { overflow: hidden; border: 1px solid rgba(255,255,255,.07); border-radius: 12px; background: #12161d; }
+.skeletonCardImage { aspect-ratio: 16 / 9; }
+.skeletonCardLine { height: 9px; margin: 10px; border-radius: 99px; }
+.skeletonCardLine:last-child { width: 54%; margin-top: -2px; }
+
+.watchSkeletonPlayer { width: 100%; aspect-ratio: 16 / 9; border-radius: 18px; }
+.watchSkeletonInfo { display: grid; gap: 10px; margin-top: 22px; }
+.watchSkeletonInfo .skeletonLine:nth-child(1) { width: 120px; }
+.watchSkeletonInfo .skeletonLine:nth-child(2) { width: min(720px, 90%); height: 22px; }
+.watchSkeletonInfo .skeletonLine:nth-child(3) { width: min(520px, 70%); }
+
+@keyframes avdbShimmer { to { background-position: -140% 0; } }
+
+@media (max-width: 1120px) {
+  .skeletonGrid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+}
+
+@media (max-width: 760px) {
+  .pageSkeleton { padding: 60px 10px 40px; }
+  .skeletonHero { aspect-ratio: 16 / 8.5; border-radius: 15px; }
+  .skeletonGrid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+  .modalShell { width: min(96vw, 680px) !important; }
+  .modalBody { padding: 19px 18px 20px !important; }
+}

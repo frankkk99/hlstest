@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const PLAYER_SESSION_CACHE_TTL_MS = 30 * 60 * 1000;
 const DEFAULT_SOURCE_PAGE_HOSTS = ["missav123.com", "missav.com", "fourhoi.com", "upload18.org"];
 const DEFAULT_MEDIA_HOSTS = ["surrit.com", "fourhoi.com", "helvid.com"];
 const DEFAULT_UA =
@@ -487,8 +488,7 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
   const cachedId = sessionByPageUrl.get(pageUrl);
   const cached = cachedId ? sessions.get(cachedId) : undefined;
   if (!forceFresh && cached && cached.expiresAt > Date.now() && !cached.page.isClosed()) {
-    cached.expiresAt = Date.now() + 10 * 60 * 1000;
-    return NextResponse.json({ ok: true, session: sessionPayload(cachedId!, cached) });
+    return NextResponse.json({ ok: true, cache: "hit", session: sessionPayload(cachedId!, cached) });
   }
   if (forceFresh && cached) {
     sessions.delete(cachedId!);
@@ -585,7 +585,7 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
       .then((items) => items.map((item) => `${item.name}=${item.value}`).join("; "))
       .catch(() => "");
     const sessionId = randomUUID();
-    const expiresAt = Date.now() + 10 * 60 * 1000;
+    const expiresAt = Date.now() + PLAYER_SESSION_CACHE_TTL_MS;
     const proxyUrl = (() => {
       try {
         const token = createStreamToken({
@@ -594,7 +594,7 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
           referer: finalPageUrl,
           userAgent,
           cookie,
-          expiresAt: Date.now() + 8 * 60 * 1000,
+          expiresAt,
         });
         return `/api/stream?token=${encodeURIComponent(token)}`;
       } catch {
@@ -616,6 +616,7 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
 
     return NextResponse.json({
       ok: true,
+      cache: "miss",
       sessionId,
       session: sessionPayload(sessionId, sessions.get(sessionId)!),
       pageStatus,
@@ -739,7 +740,7 @@ export async function GET(request: NextRequest) {
       };
     }, target.toString());
 
-    session.expiresAt = Date.now() + 10 * 60 * 1000;
+    session.expiresAt = Date.now() + PLAYER_SESSION_CACHE_TTL_MS;
     const headers = new Headers({
       "Cache-Control": "no-store, no-cache, must-revalidate",
       "Access-Control-Allow-Origin": "*",

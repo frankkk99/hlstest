@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import SourceSwitcher from "../../../source-switcher";
+import ExpandableText from "../../expandable-text";
+import ui from "../../ui-polish.module.css";
 import styles from "./watch.module.css";
 
 type CatalogItem = {
@@ -45,6 +47,30 @@ async function requestPlaybackSession(catalogId: string, forceFresh = false) {
   const payload = (await response.json()) as SessionResponse;
   if (!response.ok || !payload.ok || !payload.session) throw new Error(payload.error || "ยังเปิดวิดีโอไม่ได้");
   return payload.session;
+}
+
+function WatchSkeleton() {
+  return (
+    <main className={ui.pageSkeleton} aria-label="กำลังโหลดหน้าดู AVDB">
+      <div className={ui.skeletonShell}>
+        <div className={`${ui.skeletonHero} ${ui.watchSkeletonPlayer}`} />
+        <div className={ui.watchSkeletonInfo}>
+          <span className={ui.skeletonLine} />
+          <span className={ui.skeletonLine} />
+          <span className={ui.skeletonLine} />
+        </div>
+        <div className={ui.skeletonGrid}>
+          {Array.from({ length: 4 }, (_, index) => (
+            <div className={ui.skeletonCard} key={index}>
+              <div className={ui.skeletonCardImage} />
+              <span className={ui.skeletonCardLine} />
+              <span className={ui.skeletonCardLine} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
 }
 
 export default function AvdbWatchPage() {
@@ -193,11 +219,11 @@ export default function AvdbWatchPage() {
     }
   }
 
-  if (loading) return <main className={styles.page}><div className={styles.routeLoading} role="status" aria-label="กำลังโหลด"><span className={styles.routeSpinner} aria-hidden="true" /></div></main>;
+  if (loading) return <WatchSkeleton />;
 
   if (!item) return <main className={styles.page}><div className={styles.empty}><div className={styles.emptyBox}><strong>ไม่พบรายการนี้</strong><p>{message}</p><Link href="/avdb">กลับหน้าแรก</Link></div></div></main>;
 
-  const poster = item.poster_url || item.thumb_url || "";
+  const poster = item.thumb_url || item.poster_url || "";
   const code = item.movie_code || item.external_id || "AVDB";
   const loadingMessage = videoLoadingMessage(item.duration);
 
@@ -236,14 +262,14 @@ export default function AvdbWatchPage() {
         <section className={styles.watchInfo}>
           <div className={styles.infoMain}>
             <p className={styles.code}>{code}</p>
-            <h1 className={styles.title}>{item.title}</h1>
-            {item.original_title && item.original_title !== item.title ? <p className={styles.original}>{item.original_title}</p> : null}
+            <ExpandableText as="h1" lines={3} text={item.title} className={styles.title} />
+            {item.original_title && item.original_title !== item.title ? <ExpandableText as="p" lines={3} text={item.original_title} className={styles.original} /> : null}
             <div className={styles.meta}>
               {item.year ? <span>{item.year}</span> : null}
               {item.quality ? <span>{item.quality}</span> : null}
               {item.duration ? <span>{item.duration}</span> : null}
             </div>
-            {item.description ? <p className={styles.description}>{item.description}</p> : null}
+            {item.description ? <ExpandableText as="p" lines={3} text={item.description} className={styles.description} /> : null}
           </div>
           <p className={styles.playbackMessage}>{starting ? loadingMessage : message}</p>
         </section>
@@ -255,7 +281,7 @@ export default function AvdbWatchPage() {
               {related.map((entry) => (
                 <Link className={styles.card} href={`/avdb/watch/${entry.id}`} key={entry.id}>
                   <div className={styles.cover}>{entry.thumb_url || entry.poster_url ? <img src={entry.thumb_url || entry.poster_url || ""} alt="" loading="lazy" /> : null}</div>
-                  <div className={styles.cardBody}><strong>{entry.title}</strong><span>{entry.movie_code || entry.duration || "AVDB"}</span></div>
+                  <div className={styles.cardBody}><strong className={ui.cardTitle3}>{entry.title}</strong><span>{entry.movie_code || entry.duration || "AVDB"}</span></div>
                 </Link>
               ))}
             </div>

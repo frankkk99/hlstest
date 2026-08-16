@@ -1,0 +1,57 @@
+.pagePad { padding-bottom: 220px !important; }
+.statsSix { grid-template-columns: repeat(6, minmax(0,1fr)) !important; }
+.cacheStat strong { color: #a55d00; font-size: 22px !important; }
+.cardTitle3 {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3 !important;
+  overflow: hidden;
+  min-height: 49px !important;
+}
+.queueHint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 31px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  color: #806744;
+  background: rgba(89,62,28,.06);
+  font-size: 8px;
+  font-weight: 850;
+}
+.refreshButton { cursor: pointer !important; opacity: 1 !important; }
+.skeletonPage {
+  min-height: 100vh;
+  padding: 18px;
+  background: #eee5d4;
+}
+.skeletonShell { width: min(1420px,100%); margin: 0 auto; }
+.skeletonBar,
+.skeletonHero,
+.skeletonTile,
+.skeletonPanel,
+.skeletonLine {
+  background: linear-gradient(100deg, rgba(70,48,21,.045) 20%, rgba(255,255,255,.52) 38%, rgba(70,48,21,.045) 56%);
+  background-size: 240% 100%;
+  animation: adminShimmer 1.35s linear infinite;
+}
+.skeletonBar { height: 64px; border-radius: 17px; }
+.skeletonHero { height: 190px; margin-top: 18px; border-radius: 22px; }
+.skeletonStats { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+.skeletonTile { height: 112px; border-radius: 16px; }
+.skeletonWork { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(300px,.7fr); gap: 13px; margin-top: 14px; }
+.skeletonPanel { height: 430px; border-radius: 18px; }
+.skeletonSide { display: grid; gap: 13px; }
+.skeletonSide .skeletonPanel { height: 202px; }
+@keyframes adminShimmer { to { background-position: -140% 0; } }
+
+@media (max-width: 1120px) {
+  .statsSix, .skeletonStats { grid-template-columns: repeat(3,minmax(0,1fr)) !important; }
+}
+@media (max-width: 760px) {
+  .pagePad { padding-bottom: 300px !important; }
+  .statsSix, .skeletonStats { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  .skeletonPage { padding: 10px; }
+  .skeletonWork { grid-template-columns: 1fr; }
+  .skeletonHero { height: 160px; }
+}
