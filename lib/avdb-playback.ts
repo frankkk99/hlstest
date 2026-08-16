@@ -29,7 +29,6 @@ type CatalogPlaybackRow = AvdbPublicDetail & {
   source: string;
   is_active: boolean;
   player_page_url: string | null;
-  verified_media_url: string | null;
 };
 
 type StagePlaybackRow = {
@@ -39,7 +38,6 @@ type StagePlaybackRow = {
   player_provider: string | null;
   player_status: string;
   stage_status: string;
-  verified_media_url: string | null;
 };
 
 let client: SupabaseClient | null | undefined;
@@ -90,13 +88,16 @@ export async function fetchAvdbPlaybackSource(idValue: unknown): Promise<AvdbPla
   const id = cleanId(idValue);
   if (!id) throw new Error("ไม่พบรหัส AVDB");
 
+  // AVDB follows the same playback principle as MISSAV: the public catalog
+  // stores metadata + the source page reference. A fresh Browser Session is
+  // created when the user watches; a previously verified/signed HLS URL is not
+  // required because it may already be stale by playback time.
   const catalogResponse = await db()
     .from("avdb_catalog_items")
-    .select(`${PUBLIC_FIELDS},source,is_active,player_page_url,verified_media_url`)
+    .select(`${PUBLIC_FIELDS},source,is_active,player_page_url`)
     .eq("id", id)
     .eq("source", "avdbapi")
     .eq("is_active", true)
-    .not("verified_media_url", "is", null)
     .maybeSingle();
 
   if (catalogResponse.error) throw new Error(catalogResponse.error.message);
@@ -105,7 +106,7 @@ export async function fetchAvdbPlaybackSource(idValue: unknown): Promise<AvdbPla
   const catalog = catalogResponse.data as CatalogPlaybackRow;
   const stageResponse = await db()
     .from("avdb_stage_items")
-    .select("id,source,player_page_url,player_provider,player_status,stage_status,verified_media_url")
+    .select("id,source,player_page_url,player_provider,player_status,stage_status")
     .eq("id", catalog.stage_item_id)
     .eq("source", "avdbapi")
     .maybeSingle();
@@ -114,8 +115,8 @@ export async function fetchAvdbPlaybackSource(idValue: unknown): Promise<AvdbPla
   if (!stageResponse.data) throw new Error("ไม่พบข้อมูล Staging ของรายการนี้");
 
   const stage = stageResponse.data as StagePlaybackRow;
-  if (stage.player_status !== "ready" || stage.stage_status !== "published" || !stage.verified_media_url) {
-    throw new Error("Player ของรายการนี้ไม่ได้อยู่ในสถานะพร้อมรับชม");
+  if (stage.stage_status === "duplicate" || stage.stage_status === "rejected") {
+    throw new Error("รายการนี้ไม่พร้อมเป็นต้นทางสำหรับ Playback");
   }
 
   const playerPageUrl = String(stage.player_page_url || catalog.player_page_url || "").trim();
