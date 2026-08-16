@@ -151,6 +151,7 @@ export default function AvdbWatchPage() {
     if (!item || (starting && attempt === 0)) return;
     const run = ++runRef.current;
     setRequested(true);
+    setStarted(false);
     setStarting(true);
     setMessage(attempt ? "กำลังลองเชื่อมต่อให้อีกครั้ง..." : videoLoadingMessage(item.duration));
     stopVideo();
@@ -241,6 +242,11 @@ export default function AvdbWatchPage() {
             onPlay={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
             onPlaying={() => { setStarted(true); setStarting(false); setMessage("กำลังรับชม"); }}
           />
+          {requested && !started && poster ? (
+            <div className={styles.loadingPoster} aria-hidden="true">
+              <img src={poster} alt="" />
+            </div>
+          ) : null}
           {!requested && !started && !starting ? <div className={styles.posterShade} /> : null}
           {!requested && !started && !starting ? (
             <div className={styles.playOverlay}>

@@ -42,6 +42,9 @@
   box-shadow: 0 24px 70px rgba(0,0,0,.4);
 }
 .playerFrame video { display: block; width: 100%; height: 100%; background: #000; object-fit: contain; }
+.loadingPoster { position: absolute; inset: 0; z-index: 1; overflow: hidden; background: #050608; pointer-events: none; }
+.loadingPoster img { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(1); animation: loadingPosterZoom 5.6s ease-in-out infinite alternate; will-change: transform; }
+@keyframes loadingPosterZoom { from { transform: scale(1); } to { transform: scale(1.08); } }
 .posterShade { position: absolute; inset: 0; background: linear-gradient(180deg,rgba(0,0,0,.06),rgba(0,0,0,.56)); pointer-events: none; }
 .playOverlay { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; }
 .playButton { pointer-events: auto; display: grid; place-items: center; width: 74px; height: 74px; border: 1px solid rgba(255,255,255,.32); border-radius: 50%; color: #18110a; background: #f4a24e; box-shadow: 0 14px 36px rgba(0,0,0,.34); font-size: 25px; cursor: pointer; transform: none; transition: background .15s ease, box-shadow .15s ease; }
@@ -86,6 +89,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .routeSpinner { animation-duration: 1.4s; }
+  .loadingPoster img { animation: none; }
 }
 
 @media (max-width: 900px) {
