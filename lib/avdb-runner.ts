@@ -248,6 +248,7 @@ async function stageScanItems(db: SupabaseClient, run: RunRow, pageNumber: numbe
   const updates: Array<{ existing: ExistingStageRow; payload: ReturnType<typeof stagePayload> }> = [];
   const inserts: Array<Record<string, unknown>> = [];
   const seenNewKeys = new Set<string>();
+  const seenNewExternalIds = new Set<string>();
   let duplicates = 0;
   let newStaged = 0;
 
@@ -257,6 +258,11 @@ async function stageScanItems(db: SupabaseClient, run: RunRow, pageNumber: numbe
     const exact = externalId ? existing.byExternalId.get(externalId) : undefined;
     if (exact) {
       updates.push({ existing: exact, payload });
+      continue;
+    }
+
+    if (externalId && seenNewExternalIds.has(externalId)) {
+      duplicates += 1;
       continue;
     }
 
@@ -280,6 +286,8 @@ async function stageScanItems(db: SupabaseClient, run: RunRow, pageNumber: numbe
       });
       seenNewKeys.add(payload.dedupe_key);
     }
+
+    if (externalId) seenNewExternalIds.add(externalId);
   }
 
   const updated = await updateExistingRows(db, updates);
