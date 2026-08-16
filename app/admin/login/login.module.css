@@ -5,6 +5,7 @@
 .description { margin: 12px 0 24px; color: #93a2b4; font-size: 13px; line-height: 1.6; }
 .label { display: block; margin-bottom: 7px; color: #cbd6e2; font-size: 12px; font-weight: 800; }
 .input { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 12px 13px; outline: 0; color: #fff; background: #08111c; }
+.input + .label { margin-top: 14px; }
 .input:focus { border-color: #6aa8ff; box-shadow: 0 0 0 3px rgba(106,168,255,.14); }
 .error { margin: 12px 0 0; color: #ff9cad; font-size: 12px; }
 .button { width: 100%; margin-top: 20px; border: 0; border-radius: 10px; padding: 12px 14px; color: #07111d; background: #9ec4ff; font-weight: 900; cursor: pointer; }
