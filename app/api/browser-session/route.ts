@@ -4,6 +4,7 @@ import chromium from "@sparticuz/chromium";
 import puppeteer, { type Page } from "puppeteer-core";
 import { getServerlessChromiumExecutable } from "@/lib/serverless-chromium";
 import { createStreamToken } from "@/lib/stream-token";
+import { ensureUpload18Authenticated } from "@/lib/upload18-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +14,11 @@ const DEFAULT_SOURCE_PAGE_HOSTS = ["missav123.com", "missav.com", "fourhoi.com",
 const DEFAULT_MEDIA_HOSTS = ["surrit.com", "fourhoi.com", "helvid.com"];
 const DEFAULT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0";
+
+type MediaDiagnostics = {
+  manifest: { url: string; status: number; contentType: string; bytes: number };
+  segment: { url: string; status: number; contentType: string; bytes: number };
+};
 
 type BrowserSessionState = {
   browser: Awaited<ReturnType<typeof puppeteer.launch>>;
@@ -24,12 +30,7 @@ type BrowserSessionState = {
   diagnostics: MediaDiagnostics;
 };
 
-type MediaDiagnostics = {
-  manifest: { url: string; status: number; contentType: string; bytes: number };
-  segment: { url: string; status: number; contentType: string; bytes: number };
-};
-
-type BrowserFailureType = "chromium" | "player";
+type BrowserFailureType = "chromium" | "player" | "auth";
 
 class BrowserSessionError extends Error {
   constructor(
@@ -42,9 +43,6 @@ class BrowserSessionError extends Error {
   }
 }
 
-// The browser page and its cookie jar must remain alive while HLS.js requests
-// the manifest and segments. A short-lived in-memory session is appropriate
-// for this diagnostic tool and avoids forwarding Cloudflare cookies to the UI.
 const sessions = new Map<string, BrowserSessionState>();
 const sessionByPageUrl = new Map<string, string>();
 type BrowserInstance = Awaited<ReturnType<typeof puppeteer.launch>>;
@@ -117,10 +115,14 @@ function isAllowedMediaUrl(raw: string) {
 }
 
 function isManifestUrl(raw: string) {
-  return (
-    isAllowedMediaUrl(raw) &&
-    (/\.m3u8(?:$|\?)/i.test(raw) || /\/playlist(?:\/|\.|$)/i.test(new URL(raw).pathname))
-  );
+  try {
+    return (
+      isAllowedMediaUrl(raw) &&
+      (/\.m3u8(?:$|\?)/i.test(raw) || /\/playlist(?:\/|\.|$)/i.test(new URL(raw).pathname))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function browserProxyUrl(origin: string, sessionId: string, target: string) {
@@ -154,111 +156,164 @@ function rewriteBrowserManifest(text: string, base: URL, origin: string, session
           }
         });
       }
-
       return line;
     })
     .join("\n");
 }
 
+async function kickMediaPlayback(page: Page) {
+  for (const frame of page.frames()) {
+    await frame
+      .evaluate(async () => {
+        for (const video of Array.from(document.querySelectorAll("video")) as HTMLVideoElement[]) {
+          video.muted = true;
+          await video.play().catch(() => undefined);
+        }
+      })
+      .catch((error) => {
+        if (isRetryableBrowserError(error)) throw error;
+      });
+  }
+}
+
 async function waitForMedia(page: Page, timeoutMs: number) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const mediaUrls = await page.evaluate(() => {
-      const values = new Set<string>();
-      for (const element of Array.from(document.querySelectorAll("video, source"))) {
-        for (const attribute of ["src", "data-src"]) {
-          const value = element.getAttribute(attribute);
-          if (value) values.add(value);
-        }
-      }
-      return [...values];
-    }).catch(() => [] as string[]);
-
-    if (mediaUrls.some(isManifestUrl)) return;
+    for (const frame of page.frames()) {
+      const mediaUrls = await frame
+        .evaluate(() => {
+          const values = new Set<string>();
+          for (const element of Array.from(document.querySelectorAll("video, source"))) {
+            for (const attribute of ["src", "data-src"]) {
+              const value = element.getAttribute(attribute);
+              if (value) values.add(value);
+            }
+          }
+          return [...values];
+        })
+        .catch(() => [] as string[]);
+      if (mediaUrls.some(isManifestUrl)) return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
 
 async function inspectManifestAndFirstSegment(page: Page, manifestUrl: string) {
-  return page.evaluate(async (rootUrl) => {
-    type Check = { url: string; status: number; contentType: string; bytes: number };
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 18000);
+  return page
+    .evaluate(async (rootUrl) => {
+      type Check = { url: string; status: number; contentType: string; bytes: number };
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 18000);
 
-    try {
-      async function fetchText(url: string) {
-        const response = await fetch(url, { credentials: "include", cache: "no-store", signal: controller.signal });
-        const body = await response.text();
-        return {
-          response,
-          body,
-          check: { url, status: response.status, contentType: response.headers.get("content-type") || "", bytes: body.length },
-        };
-      }
-
-      function firstMediaUrl(body: string, baseUrl: string) {
-        const map = body.match(/#EXT-X-MAP:[^\n]*URI="([^"]+)"/i)?.[1];
-        if (map) return new URL(map, baseUrl).toString();
-        const line = body
-          .split(/\r?\n/)
-          .map((value) => value.trim())
-          .find((value) => value && !value.startsWith("#"));
-        return line ? new URL(line, baseUrl).toString() : null;
-      }
-
-      const root = await fetchText(rootUrl);
-      if (!root.response.ok || !/m3u8|mpegurl/i.test(root.check.contentType) && !/\.m3u8(?:$|\?)/i.test(rootUrl)) {
-        return { ok: false as const, stage: "manifest" as const, error: `Manifest HTTP ${root.response.status}` , manifest: root.check };
-      }
-
-      let playlistUrl = rootUrl;
-      let playlistBody = root.body;
-      let segmentUrl = firstMediaUrl(playlistBody, playlistUrl);
-      for (let depth = 0; segmentUrl && /\.m3u8(?:$|\?)/i.test(segmentUrl) && depth < 3; depth += 1) {
-        const child = await fetchText(segmentUrl);
-        if (!child.response.ok) {
-          return { ok: false as const, stage: "manifest" as const, error: `Variant manifest HTTP ${child.response.status}`, manifest: child.check };
+      try {
+        async function fetchText(url: string) {
+          const response = await fetch(url, { credentials: "include", cache: "no-store", signal: controller.signal });
+          const body = await response.text();
+          return {
+            response,
+            body,
+            check: {
+              url,
+              status: response.status,
+              contentType: response.headers.get("content-type") || "",
+              bytes: body.length,
+            },
+          };
         }
-        playlistUrl = segmentUrl;
-        playlistBody = child.body;
-        segmentUrl = firstMediaUrl(playlistBody, playlistUrl);
-      }
 
-      if (!segmentUrl) {
-        return { ok: false as const, stage: "segment" as const, error: "ไม่พบ URI ของ segment แรกใน manifest", manifest: root.check };
-      }
+        function firstMediaUrl(body: string, baseUrl: string) {
+          const map = body.match(/#EXT-X-MAP:[^\n]*URI="([^"]+)"/i)?.[1];
+          if (map) return new URL(map, baseUrl).toString();
+          const line = body
+            .split(/\r?\n/)
+            .map((value) => value.trim())
+            .find((value) => value && !value.startsWith("#"));
+          return line ? new URL(line, baseUrl).toString() : null;
+        }
 
-      const segmentResponse = await fetch(segmentUrl, {
-        credentials: "include",
-        cache: "no-store",
-        headers: { Range: "bytes=0-65535" },
-        signal: controller.signal,
-      });
-      const segmentBytes = new Uint8Array(await segmentResponse.arrayBuffer());
-      const segmentContentType = segmentResponse.headers.get("content-type") || "";
-      const sample = new TextDecoder().decode(segmentBytes.subarray(0, 64)).trim().toLowerCase();
-      const looksLikeHtml = /text\/html/i.test(segmentContentType) || sample.startsWith("<!doctype") || sample.startsWith("<html");
-      const segment: Check = { url: segmentUrl, status: segmentResponse.status, contentType: segmentContentType, bytes: segmentBytes.byteLength };
-      if (!segmentResponse.ok || !segmentBytes.byteLength || looksLikeHtml) {
-        return { ok: false as const, stage: "segment" as const, error: `Segment แรก HTTP ${segmentResponse.status} หรือไม่มีข้อมูลวิดีโอ`, manifest: root.check, segment };
-      }
+        const root = await fetchText(rootUrl);
+        if (!root.response.ok || (!/m3u8|mpegurl/i.test(root.check.contentType) && !/\.m3u8(?:$|\?)/i.test(rootUrl))) {
+          return {
+            ok: false as const,
+            stage: "manifest" as const,
+            error: `Manifest HTTP ${root.response.status}`,
+            manifest: root.check,
+          };
+        }
 
-      return { ok: true as const, manifest: root.check, segment };
-    } finally {
-      window.clearTimeout(timeout);
-    }
-  }, manifestUrl).catch((error) => {
-    throw new BrowserSessionError(
-      error instanceof Error ? error.message : "ตรวจ manifest/segment ไม่สำเร็จ",
-      "chromium",
-      true,
-    );
-  });
+        let playlistUrl = rootUrl;
+        let playlistBody = root.body;
+        let segmentUrl = firstMediaUrl(playlistBody, playlistUrl);
+        for (let depth = 0; segmentUrl && /\.m3u8(?:$|\?)/i.test(segmentUrl) && depth < 3; depth += 1) {
+          const child = await fetchText(segmentUrl);
+          if (!child.response.ok) {
+            return {
+              ok: false as const,
+              stage: "manifest" as const,
+              error: `Variant manifest HTTP ${child.response.status}`,
+              manifest: child.check,
+            };
+          }
+          playlistUrl = segmentUrl;
+          playlistBody = child.body;
+          segmentUrl = firstMediaUrl(playlistBody, playlistUrl);
+        }
+
+        if (!segmentUrl) {
+          return {
+            ok: false as const,
+            stage: "segment" as const,
+            error: "ไม่พบ URI ของ segment แรกใน manifest",
+            manifest: root.check,
+          };
+        }
+
+        const segmentResponse = await fetch(segmentUrl, {
+          credentials: "include",
+          cache: "no-store",
+          headers: { Range: "bytes=0-65535" },
+          signal: controller.signal,
+        });
+        const segmentBytes = new Uint8Array(await segmentResponse.arrayBuffer());
+        const segmentContentType = segmentResponse.headers.get("content-type") || "";
+        const sample = new TextDecoder().decode(segmentBytes.subarray(0, 64)).trim().toLowerCase();
+        const looksLikeHtml =
+          /text\/html/i.test(segmentContentType) || sample.startsWith("<!doctype") || sample.startsWith("<html");
+        const segment: Check = {
+          url: segmentUrl,
+          status: segmentResponse.status,
+          contentType: segmentContentType,
+          bytes: segmentBytes.byteLength,
+        };
+        if (!segmentResponse.ok || !segmentBytes.byteLength || looksLikeHtml) {
+          return {
+            ok: false as const,
+            stage: "segment" as const,
+            error: `Segment แรก HTTP ${segmentResponse.status} หรือไม่มีข้อมูลวิดีโอ`,
+            manifest: root.check,
+            segment,
+          };
+        }
+
+        return { ok: true as const, manifest: root.check, segment };
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }, manifestUrl)
+    .catch((error) => {
+      throw new BrowserSessionError(
+        error instanceof Error ? error.message : "ตรวจ manifest/segment ไม่สำเร็จ",
+        "chromium",
+        true,
+      );
+    });
 }
 
 function isRetryableBrowserError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /detached|target closed|browser.*(?:closed|disconnected)|insufficient[_ ]resources|execution context was destroyed|protocol error|frame was detached|navigation.*failed/i.test(message);
+  return /detached|target closed|browser.*(?:closed|disconnected)|insufficient[_ ]resources|execution context was destroyed|protocol error|frame was detached|navigation.*failed/i.test(
+    message,
+  );
 }
 
 async function cleanupExpiredSessions() {
@@ -283,6 +338,19 @@ function sessionPayload(id: string, session: BrowserSessionState) {
     expiresAt: session.expiresAt,
     diagnostics: session.diagnostics,
   };
+}
+
+function upload18AuthMessage(reason: string | undefined) {
+  if (reason === "credentials-missing") {
+    return "Upload18 ต้องเข้าสู่ระบบก่อนเปิด Player — ยังไม่ได้ตั้งค่า UPLOAD18_USERNAME / UPLOAD18_PASSWORD บน Server";
+  }
+  if (reason === "login-failed") {
+    return "Upload18 login ไม่สำเร็จ กรุณาตรวจสอบ UPLOAD18_USERNAME / UPLOAD18_PASSWORD";
+  }
+  if (reason === "session-not-persisted") {
+    return "Upload18 login สำเร็จแต่ session ไม่คงอยู่เมื่อกลับไปหน้า Player";
+  }
+  return "Upload18 authentication ไม่สำเร็จ";
 }
 
 async function createBrowserSession(body: { pageUrl: string; userAgent: string; mediaHint: string; forceFresh: boolean }) {
@@ -334,16 +402,16 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
     });
 
     const navigation = await page.goto(pageUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    let pageStatus = navigation?.status() ?? 0;
+
+    const upload18Auth = await ensureUpload18Authenticated(page, pageUrl);
+    if (!upload18Auth.authenticated) {
+      throw new BrowserSessionError(upload18AuthMessage(upload18Auth.reason), "auth", false);
+    }
+    if (typeof upload18Auth.pageStatus === "number") pageStatus = upload18Auth.pageStatus;
+
     await new Promise((resolve) => setTimeout(resolve, mediaHint && isManifestUrl(mediaHint) ? 1000 : 1500));
-    await page.evaluate(() => {
-      const video = document.querySelector("video") as HTMLVideoElement | null;
-      if (video) {
-        video.muted = true;
-        void video.play().catch(() => undefined);
-      }
-    }).catch((error) => {
-      if (isRetryableBrowserError(error)) throw error;
-    });
+    await kickMediaPlayback(page);
 
     const hintIsValid = Boolean(mediaHint && isManifestUrl(mediaHint));
     if (!hintIsValid) await waitForMedia(page, 12000);
@@ -378,7 +446,10 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
       );
     }
 
-    const cookie = await page.cookies(manifest.url).then((items) => items.map((item) => `${item.name}=${item.value}`).join("; ")).catch(() => "");
+    const cookie = await page
+      .cookies(manifest.url)
+      .then((items) => items.map((item) => `${item.name}=${item.value}`).join("; "))
+      .catch(() => "");
     const sessionId = randomUUID();
     const expiresAt = Date.now() + 10 * 60 * 1000;
     const proxyUrl = (() => {
@@ -396,6 +467,7 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
         return null;
       }
     })();
+
     sessions.set(sessionId, {
       browser,
       page,
@@ -412,7 +484,7 @@ async function createBrowserSession(body: { pageUrl: string; userAgent: string; 
       ok: true,
       sessionId,
       session: sessionPayload(sessionId, sessions.get(sessionId)!),
-      pageStatus: navigation?.status() ?? 0,
+      pageStatus,
       finalPageUrl,
       captured: media.slice(0, 10),
     });
@@ -446,7 +518,7 @@ async function handleBrowserSession(request: NextRequest) {
             failureType,
             attempts: attempt,
           },
-          { status: 502 },
+          { status: failureType === "auth" ? 401 : 502 },
         );
       }
       await new Promise((resolve) => setTimeout(resolve, attempt * 900));
@@ -454,7 +526,11 @@ async function handleBrowserSession(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { ok: false, error: lastError instanceof Error ? lastError.message : "Browser session failed", failureType: "chromium" as const },
+    {
+      ok: false,
+      error: lastError instanceof Error ? lastError.message : "Browser session failed",
+      failureType: "chromium" as const,
+    },
     { status: 502 },
   );
 }
@@ -464,7 +540,11 @@ export async function POST(request: NextRequest) {
     return await enqueueBrowserOperation(() => handleBrowserSession(request));
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Browser session failed", failureType: "chromium" as const },
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Browser session failed",
+        failureType: "chromium" as const,
+      },
       { status: 502 },
     );
   }
@@ -539,8 +619,6 @@ export async function GET(request: NextRequest) {
     }
 
     const body = Buffer.from(payload.bodyBase64, "base64");
-    // surrit serves MPEG-TS bytes as *.jpeg with image/jpeg. Safari is stricter
-    // than hls.js about the segment MIME, so correct it from the TS sync byte.
     if (payload.contentType.toLowerCase().includes("image/jpeg") && body[0] === 0x47) {
       headers.set("Content-Type", "video/mp2t");
     }

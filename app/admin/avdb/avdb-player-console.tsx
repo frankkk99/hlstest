@@ -81,6 +81,12 @@ function releaseLock(owner: string) {
   }
 }
 
+function resultLabel(status?: string) {
+  if (status === "ready") return "READY";
+  if (status === "blocked") return "AUTH REQUIRED";
+  return "FAILED";
+}
+
 export default function AvdbPlayerConsole() {
   const [open, setOpen] = useState(true);
   const [state, setState] = useState<PlayerState | null>(null);
@@ -151,7 +157,7 @@ export default function AvdbPlayerConsole() {
           releaseLock(ownerRef.current);
         } else if (payload.result) {
           const label = payload.result.movieCode || payload.result.title || "รายการล่าสุด";
-          setNotice(`${label}: ${payload.result.playerStatus === "ready" ? "READY" : "FAILED"}`);
+          setNotice(`${label}: ${resultLabel(payload.result.playerStatus)}`);
         }
         await refresh();
       } catch (cause) {
@@ -181,7 +187,7 @@ export default function AvdbPlayerConsole() {
       if (payload.done) setNotice("ไม่มีรายการ unverified เหลือแล้ว");
       else if (payload.result) {
         const label = payload.result.movieCode || payload.result.title || "รายการล่าสุด";
-        setNotice(`${label}: ${payload.result.playerStatus === "ready" ? "READY" : "FAILED"}`);
+        setNotice(`${label}: ${resultLabel(payload.result.playerStatus)}`);
       }
       await refresh();
     } catch (cause) {
@@ -194,12 +200,13 @@ export default function AvdbPlayerConsole() {
   const counts = state?.stats || { pending: 0, checking: 0, ready: 0, failed: 0, blocked: 0 };
   const recent = useMemo(() => state?.recent.slice(0, 6) || [], [state?.recent]);
   const locked = Boolean(state?.crawlerActive);
+  const retryableCount = counts.failed + counts.blocked;
 
   return (
     <aside className={`${styles.console} ${open ? styles.open : styles.closed}`} aria-label="AVDB Player Verification">
       <button className={styles.handle} type="button" onClick={() => setOpen((value) => !value)}>
         <span><i className={batch.running ? styles.liveDot : styles.dot} /> PLAYER VERIFY</span>
-        <b>{counts.ready}/{counts.ready + counts.pending + counts.failed + counts.checking}</b>
+        <b>{counts.ready}/{counts.ready + counts.pending + counts.failed + counts.blocked + counts.checking}</b>
       </button>
 
       {open ? (
@@ -216,10 +223,11 @@ export default function AvdbPlayerConsole() {
             <div><span>PENDING</span><b>{counts.pending}</b></div>
             <div><span>READY</span><b>{counts.ready}</b></div>
             <div><span>FAILED</span><b>{counts.failed}</b></div>
-            <div><span>CHECKING</span><b>{counts.checking}</b></div>
+            <div><span>AUTH</span><b>{counts.blocked}</b></div>
           </div>
 
           {locked ? <p className={styles.warning}>Crawler ยังทำงานอยู่ ระบบล็อก Player Verification เพื่อไม่ให้ Chromium ชนกัน</p> : null}
+          {counts.blocked > 0 ? <p className={styles.warning}>AUTH = Player ต้องเข้าสู่ระบบก่อนตรวจ เช่น Upload18 เมื่อยังไม่ได้ตั้ง credential ฝั่ง Server</p> : null}
           {error ? <p className={styles.error}>{error}</p> : null}
           {notice ? <p className={styles.notice}>{notice}</p> : null}
 
@@ -241,14 +249,14 @@ export default function AvdbPlayerConsole() {
             </button>
             <button
               type="button"
-              disabled={locked || batch.running || counts.failed < 1}
+              disabled={locked || batch.running || retryableCount < 1}
               onClick={() => {
                 setError("");
-                setNotice("เริ่ม Retry รายการที่ Player ไม่ผ่าน");
+                setNotice("เริ่ม Retry รายการ Failed และ Auth Blocked");
                 setBatchState({ running: true, includeFailed: true });
               }}
             >
-              Retry Failed
+              Retry Failed / Auth
             </button>
             <button
               className={styles.stop}
@@ -277,7 +285,7 @@ export default function AvdbPlayerConsole() {
             )) : <p className={styles.empty}>ยังไม่มีผลตรวจ Player</p>}
           </div>
 
-          <p className={styles.footer}>ผ่านเมื่อ Browser Session จับ HLS ได้ และตรวจ manifest + segment แรกสำเร็จเท่านั้น · Publish ยังปิดอยู่</p>
+          <p className={styles.footer}>READY ต้องผ่าน manifest + segment แรก · AUTH BLOCKED ไม่ถือว่า Player เสียและจะ Retry ได้หลังตั้ง credential</p>
         </div>
       ) : null}
     </aside>
