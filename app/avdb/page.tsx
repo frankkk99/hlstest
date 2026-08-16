@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { prewarmAvdbPlayback } from "@/lib/avdb-prewarm-client";
 import SourceSwitcher from "../source-switcher";
 import ExpandableText from "./expandable-text";
 import styles from "./avdb.module.css";
@@ -40,6 +41,7 @@ type CatalogResponse = {
 type QuickFilter = "all" | "latest" | "hd" | "long";
 
 const PAGE_SIZE = 48;
+const HOVER_PREWARM_DELAY_MS = 700;
 
 const CATEGORY_FILTERS = [
   ["fc2", "FC2"],
@@ -139,9 +141,27 @@ function StorefrontSkeleton() {
   );
 }
 
-function MovieCard({ item, onSelect }: { item: CatalogItem; onSelect: (item: CatalogItem) => void }) {
+function MovieCard({
+  item,
+  onSelect,
+  onHoverStart,
+  onHoverEnd,
+}: {
+  item: CatalogItem;
+  onSelect: (item: CatalogItem) => void;
+  onHoverStart: (item: CatalogItem) => void;
+  onHoverEnd: () => void;
+}) {
   return (
-    <button className={styles.card} type="button" onClick={() => onSelect(item)}>
+    <button
+      className={styles.card}
+      type="button"
+      onClick={() => onSelect(item)}
+      onMouseEnter={() => onHoverStart(item)}
+      onMouseLeave={onHoverEnd}
+      onFocus={() => onHoverStart(item)}
+      onBlur={onHoverEnd}
+    >
       <div className={styles.cover}>
         <img src={displayImage(item)} alt={item.title || codeLabel(item)} loading="lazy" />
         <span className={styles.coverShade} />
@@ -173,6 +193,7 @@ export default function AvdbStorefrontPage() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<CatalogItem | null>(null);
   const [heroIndex, setHeroIndex] = useState(0);
+  const hoverTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 280);
@@ -216,6 +237,15 @@ export default function AvdbStorefrontPage() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, []);
 
+  useEffect(() => {
+    if (!selected?.id) return;
+    void prewarmAvdbPlayback(selected.id);
+  }, [selected?.id]);
+
+  useEffect(() => () => {
+    if (hoverTimerRef.current !== null) window.clearTimeout(hoverTimerRef.current);
+  }, []);
+
   const filteredItems = useMemo(() => items.filter((item) => matchesFilter(item, filter)), [items, filter]);
   const heroItems = useMemo(() => items.slice(0, 6), [items]);
   const hero = heroItems[Math.min(heroIndex, Math.max(0, heroItems.length - 1))] || null;
@@ -235,6 +265,22 @@ export default function AvdbStorefrontPage() {
   function chooseCategory(value: string) {
     setFilter("all");
     setSelectedCategory((current) => current === value ? "" : value);
+  }
+
+  function cancelHoverPrewarm() {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  }
+
+  function scheduleHoverPrewarm(item: CatalogItem) {
+    cancelHoverPrewarm();
+    if (typeof window.matchMedia === "function" && !window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null;
+      void prewarmAvdbPlayback(item.id);
+    }, HOVER_PREWARM_DELAY_MS);
   }
 
   if (loading && !items.length && !error) return <StorefrontSkeleton />;
@@ -269,7 +315,12 @@ export default function AvdbStorefrontPage() {
                 {hero.duration ? <span>{hero.duration}</span> : null}
               </div>
               <div className={styles.heroActions}>
-                <Link className={styles.primaryButton} href={`/avdb/watch/${hero.id}`}>▶ รับชม</Link>
+                <Link
+                  className={styles.primaryButton}
+                  href={`/avdb/watch/${hero.id}`}
+                  onMouseEnter={() => scheduleHoverPrewarm(hero)}
+                  onMouseLeave={cancelHoverPrewarm}
+                >▶ รับชม</Link>
                 <button className={styles.secondaryButton} type="button" onClick={() => setSelected(hero)}>รายละเอียด</button>
               </div>
             </div>
@@ -333,7 +384,15 @@ export default function AvdbStorefrontPage() {
           ) : filteredItems.length ? (
             <>
               <div className={styles.cardGrid}>
-                {filteredItems.map((item) => <MovieCard key={item.id} item={item} onSelect={setSelected} />)}
+                {filteredItems.map((item) => (
+                  <MovieCard
+                    key={item.id}
+                    item={item}
+                    onSelect={setSelected}
+                    onHoverStart={scheduleHoverPrewarm}
+                    onHoverEnd={cancelHoverPrewarm}
+                  />
+                ))}
               </div>
               {hasMore ? (
                 <div className={styles.loadMoreWrap}>
