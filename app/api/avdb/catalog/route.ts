@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
       page: request.nextUrl.searchParams.get("page"),
       limit: request.nextUrl.searchParams.get("limit"),
       search: request.nextUrl.searchParams.get("q"),
+      category: request.nextUrl.searchParams.get("category"),
     });
 
     return NextResponse.json(

@@ -20,6 +20,7 @@ type CatalogItem = {
   poster_url: string | null;
   thumb_url: string | null;
   player_provider: string | null;
+  categories: string[];
   published_at: string;
 };
 
@@ -30,12 +31,53 @@ type CatalogResponse = {
   limit: number;
   total: number;
   pageCount: number;
+  category?: string;
   items: CatalogItem[];
 };
 
-type QuickFilter = "all" | "latest" | "hd" | "fc2" | "long";
+type QuickFilter = "all" | "latest" | "hd" | "long";
 
 const PAGE_SIZE = 48;
+
+const CATEGORY_FILTERS = [
+  ["fc2", "FC2"],
+  ["uncensored", "ไม่เซ็นเซอร์"],
+  ["first-shoot", "ถ่ายครั้งแรก"],
+  ["private", "ถ่ายส่วนตัว"],
+  ["amateur", "สมัครเล่น"],
+  ["mature", "สาวใหญ่"],
+  ["ntr", "NTR"],
+  ["cosplay", "คอสเพลย์"],
+  ["pov", "POV"],
+  ["group", "หลายคน"],
+  ["massage", "นวด / Soap"],
+] as const;
+
+const CATEGORY_LABELS: Record<string, string> = {
+  fc2: "FC2",
+  "1pondo": "1Pondo",
+  caribbeancom: "Caribbeancom",
+  heyzo: "Heyzo",
+  pacopacomama: "Pacopacomama",
+  "10musume": "10Musume",
+  uncensored: "ไม่เซ็นเซอร์",
+  "first-shoot": "ถ่ายครั้งแรก",
+  private: "ถ่ายส่วนตัว",
+  amateur: "สมัครเล่น",
+  mature: "สาวใหญ่",
+  ntr: "NTR",
+  cosplay: "คอสเพลย์",
+  pov: "POV",
+  group: "หลายคน",
+  massage: "นวด / Soap",
+  hd: "HD",
+  "60-plus": "60 นาที+",
+  "90-plus": "90 นาที+",
+};
+
+function categoryLabel(value: string) {
+  return CATEGORY_LABELS[value] || value;
+}
 
 function displayImage(item: CatalogItem) {
   return item.thumb_url || item.poster_url || "/cover-fallback.svg";
@@ -54,10 +96,13 @@ function durationMinutes(value: string | null) {
   return parts[0] || 0;
 }
 
+function hasCategory(item: CatalogItem, category: string) {
+  return Array.isArray(item.categories) && item.categories.includes(category);
+}
+
 function matchesFilter(item: CatalogItem, filter: QuickFilter) {
-  if (filter === "hd") return /hd|1080|720/i.test(item.quality || "");
-  if (filter === "fc2") return /fc2/i.test(`${item.movie_code || ""} ${item.title || ""}`);
-  if (filter === "long") return durationMinutes(item.duration) >= 60;
+  if (filter === "hd") return hasCategory(item, "hd") || /hd|1080|720/i.test(item.quality || "");
+  if (filter === "long") return hasCategory(item, "60-plus") || durationMinutes(item.duration) >= 60;
   return true;
 }
 
@@ -101,6 +146,7 @@ export default function AvdbStorefrontPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [filter, setFilter] = useState<QuickFilter>("all");
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [total, setTotal] = useState(0);
@@ -115,11 +161,12 @@ export default function AvdbStorefrontPage() {
     return () => window.clearTimeout(timer);
   }, [query]);
 
-  const fetchPage = useCallback(async (targetPage: number, append: boolean, search: string) => {
+  const fetchPage = useCallback(async (targetPage: number, append: boolean, search: string, category: string) => {
     append ? setLoadingMore(true) : setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(targetPage), limit: String(PAGE_SIZE) });
       if (search) params.set("q", search);
+      if (category) params.set("category", category);
       const response = await fetch(`/api/avdb/catalog?${params.toString()}`, { cache: "no-store" });
       const payload = (await response.json()) as CatalogResponse;
       if (!response.ok || !payload.ok) throw new Error(payload.error || "โหลดรายการไม่สำเร็จ");
@@ -140,8 +187,8 @@ export default function AvdbStorefrontPage() {
 
   useEffect(() => {
     setPage(1);
-    void fetchPage(1, false, debouncedQuery);
-  }, [debouncedQuery, fetchPage]);
+    void fetchPage(1, false, debouncedQuery, selectedCategory);
+  }, [debouncedQuery, selectedCategory, fetchPage]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -155,9 +202,21 @@ export default function AvdbStorefrontPage() {
   const heroItems = useMemo(() => items.slice(0, 6), [items]);
   const hero = heroItems[Math.min(heroIndex, Math.max(0, heroItems.length - 1))] || null;
   const latestItems = useMemo(() => items.slice(0, 12), [items]);
-  const fc2Items = useMemo(() => items.filter((item) => matchesFilter(item, "fc2")).slice(0, 12), [items]);
-  const longItems = useMemo(() => items.filter((item) => matchesFilter(item, "long")).slice(0, 12), [items]);
+  const fc2Items = useMemo(() => items.filter((item) => hasCategory(item, "fc2")).slice(0, 12), [items]);
+  const uncensoredItems = useMemo(() => items.filter((item) => hasCategory(item, "uncensored")).slice(0, 12), [items]);
+  const longItems = useMemo(() => items.filter((item) => hasCategory(item, "60-plus") || durationMinutes(item.duration) >= 60).slice(0, 12), [items]);
   const hasMore = page < pageCount;
+  const categoryTitle = selectedCategory ? categoryLabel(selectedCategory) : "";
+
+  function chooseQuickFilter(value: QuickFilter) {
+    setSelectedCategory("");
+    setFilter(value);
+  }
+
+  function chooseCategory(value: string) {
+    setFilter("all");
+    setSelectedCategory((current) => current === value ? "" : value);
+  }
 
   return (
     <main className={styles.storefront}>
@@ -166,7 +225,7 @@ export default function AvdbStorefrontPage() {
         <nav className={styles.nav} aria-label="เมนู AVDB">
           <Link href="/avdb" className={styles.navActive}>หน้าแรก</Link>
           <Link href="#latest">มาใหม่</Link>
-          <Link href="#fc2">FC2</Link>
+          <Link href="#categories">หมวดหมู่</Link>
           <Link href="#catalog">ทั้งหมด</Link>
         </nav>
         <div className={styles.headerActions}>
@@ -180,7 +239,7 @@ export default function AvdbStorefrontPage() {
           <div className={styles.heroImage}><img src={displayImage(hero)} alt="" /></div>
           <div className={styles.container}>
             <div className={styles.heroContent}>
-              <p className={styles.heroKicker}>เรื่องเด่นจาก AVDB</p>
+              <p className={styles.heroKicker}>{selectedCategory ? `หมวด ${categoryTitle}` : "เรื่องเด่นจาก AVDB"}</p>
               <h1 className={styles.heroTitle}>{hero.title || codeLabel(hero)}</h1>
               <p className={styles.heroDescription}>{hero.description || "เลือกเรื่องที่ต้องการ แล้วเริ่มรับชมได้ทันที"}</p>
               <div className={styles.heroMeta}>
@@ -212,30 +271,41 @@ export default function AvdbStorefrontPage() {
       ) : null}
 
       <div className={styles.container}>
-        {!debouncedQuery ? (
-          <>
-            <div className={styles.quickFilters} aria-label="ตัวกรองด่วน">
-              {([
-                ["all", "ทั้งหมด"],
-                ["latest", "มาใหม่"],
-                ["hd", "HD"],
-                ["fc2", "FC2"],
-                ["long", "60 นาที+"],
-              ] as Array<[QuickFilter, string]>).map(([value, label]) => (
-                <button key={value} type="button" className={filter === value ? styles.quickActive : ""} onClick={() => setFilter(value)}>{label}</button>
-              ))}
-            </div>
+        <div className={styles.quickFilters} aria-label="ตัวกรองด่วน">
+          {([[
+            "all", "ทั้งหมด"
+          ], [
+            "latest", "มาใหม่"
+          ], [
+            "hd", "HD"
+          ], [
+            "long", "60 นาที+"
+          ]] as Array<[QuickFilter, string]>).map(([value, label]) => (
+            <button key={value} type="button" className={!selectedCategory && filter === value ? styles.quickActive : ""} onClick={() => chooseQuickFilter(value)}>{label}</button>
+          ))}
+        </div>
 
+        <div className={styles.quickFilters} id="categories" aria-label="หมวดหมู่จากชื่อเรื่อง">
+          {CATEGORY_FILTERS.map(([value, label]) => (
+            <button key={value} type="button" className={selectedCategory === value ? styles.quickActive : ""} onClick={() => chooseCategory(value)}>{label}</button>
+          ))}
+        </div>
+
+        {!debouncedQuery && !selectedCategory ? (
+          <>
             <HorizontalRow title="มาใหม่" note="รายการล่าสุดที่เพิ่งเข้ามา" items={latestItems} onSelect={setSelected} anchor="latest" />
-            <HorizontalRow title="FC2" note="รวมรหัส FC2 ที่มีในชุดปัจจุบัน" items={fc2Items} onSelect={setSelected} anchor="fc2" />
-            <HorizontalRow title="ดูยาว 60 นาที+" note="เหมาะสำหรับเปิดดูต่อเนื่อง" items={longItems} onSelect={setSelected} />
+            <HorizontalRow title="FC2" note="จัดหมวดอัตโนมัติจากรหัสและชื่อเรื่อง" items={fc2Items} onSelect={setSelected} />
+            <HorizontalRow title="ไม่เซ็นเซอร์" note="ตรวจจากคำที่ระบุชัดในชื่อเรื่อง" items={uncensoredItems} onSelect={setSelected} />
+            <HorizontalRow title="ดูยาว 60 นาที+" note="จัดจากระยะเวลาของวิดีโอ" items={longItems} onSelect={setSelected} />
           </>
         ) : null}
 
         <section className={styles.catalogSection} id="catalog">
           <div className={styles.toolbar}>
             <div>
-              <h2 className={styles.sectionTitle}>{debouncedQuery ? `ผลการค้นหา “${debouncedQuery}”` : "รายการทั้งหมด"}</h2>
+              <h2 className={styles.sectionTitle}>
+                {debouncedQuery ? `ผลการค้นหา “${debouncedQuery}”` : selectedCategory ? `หมวด ${categoryTitle}` : "รายการทั้งหมด"}
+              </h2>
               <p className={styles.sectionNote}>มีทั้งหมด {total.toLocaleString()} เรื่อง</p>
             </div>
             <label className={styles.searchBox}>
@@ -257,14 +327,14 @@ export default function AvdbStorefrontPage() {
               </div>
               {hasMore ? (
                 <div className={styles.loadMoreWrap}>
-                  <button type="button" disabled={loadingMore} onClick={() => void fetchPage(page + 1, true, debouncedQuery)}>
+                  <button type="button" disabled={loadingMore} onClick={() => void fetchPage(page + 1, true, debouncedQuery, selectedCategory)}>
                     {loadingMore ? "กำลังโหลด…" : "โหลดเพิ่ม"}
                   </button>
                 </div>
               ) : null}
             </>
           ) : (
-            <div className={styles.empty}>{debouncedQuery ? "ไม่พบรายการที่ค้นหา" : "ไม่มีรายการในตัวกรองนี้"}</div>
+            <div className={styles.empty}>{debouncedQuery ? "ไม่พบรายการที่ค้นหา" : selectedCategory ? "ยังไม่มีรายการในหมวดนี้" : "ไม่มีรายการในตัวกรองนี้"}</div>
           )}
         </section>
       </div>
@@ -283,6 +353,7 @@ export default function AvdbStorefrontPage() {
                 {selected.year ? <span>{selected.year}</span> : null}
                 {selected.quality ? <span>{selected.quality}</span> : null}
                 {selected.duration ? <span>{selected.duration}</span> : null}
+                {(selected.categories || []).filter((value) => !["hd", "60-plus", "90-plus"].includes(value)).slice(0, 5).map((value) => <span key={value}>{categoryLabel(value)}</span>)}
               </div>
               <div className={styles.modalActions}>
                 <Link className={styles.primaryButton} href={`/avdb/watch/${selected.id}`}>▶ รับชมทันที</Link>
