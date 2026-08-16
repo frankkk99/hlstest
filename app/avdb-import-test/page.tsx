@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import ExpandableText from "../avdb/expandable-text";
 
 type Item = {
   row: number;
@@ -310,7 +311,7 @@ export default function AvdbImportTestPage() {
                       {item.year && <span className="binding">{item.year}</span>}
                       {item.quality && <span className="binding">{item.quality}</span>}
                     </div>
-                    <div style={{ marginTop: 7, lineHeight: 1.5 }}>{item.name}</div>
+                    <ExpandableText as="p" lines={3} text={item.name || item.movieCode || "ยังไม่มีชื่อ"} className="subtitle" />
                     <div className="hint">API HTTP {item.apiStatus} · {item.apiElapsedMs} ms</div>
                   </div>
                 </div>
@@ -340,7 +341,7 @@ export default function AvdbImportTestPage() {
                   <span className="binding on">หน้า {item.pageNumber}</span>
                   {item.typeName && <span className="binding">{item.typeName}</span>}
                 </div>
-                <div style={{ marginTop: 7, lineHeight: 1.5 }}>{item.name}</div>
+                <ExpandableText as="p" lines={3} text={item.name || item.movieCode || "ยังไม่มีชื่อ"} className="subtitle" />
                 <code className="urlblock">{item.playerUrl || "ไม่พบ link_embed"}</code>
               </article>
             ))}
