@@ -25,6 +25,10 @@
 .back:hover { color: #fff; }
 .shell { width: min(1160px, calc(100% - 40px)); margin: 22px auto 0; }
 
+.routeLoading { min-height: 100vh; display: grid; place-items: center; }
+.routeSpinner { width: 30px; height: 30px; border: 2px solid rgba(255,255,255,.12); border-top-color: #f4a24e; border-radius: 50%; animation: routeSpin .72s linear infinite; }
+@keyframes routeSpin { to { transform: rotate(360deg); } }
+
 .playerFrame {
   position: relative;
   display: grid;
@@ -79,6 +83,10 @@
 .emptyBox strong { display: block; font-size: 20px; }
 .emptyBox p { color: #8f98a5; font-size: 11px; line-height: 1.6; }
 .emptyBox a { display: inline-block; margin-top: 8px; padding: 9px 14px; border-radius: 9px; color: #18110a; text-decoration: none; background: #f4a24e; font-size: 10px; font-weight: 950; }
+
+@media (prefers-reduced-motion: reduce) {
+  .routeSpinner { animation-duration: 1.4s; }
+}
 
 @media (max-width: 900px) {
   .grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
