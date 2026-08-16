@@ -1,0 +1,98 @@
+.switcher {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: auto 28px auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 4px 8px 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .035em;
+  white-space: nowrap;
+  box-shadow: 0 10px 30px rgba(0,0,0,.18);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
+}
+
+.switcher:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(0,0,0,.24);
+}
+
+.current,
+.target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.current { opacity: .72; }
+.target { opacity: 1; }
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px currentColor;
+}
+
+.switchIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  transition: transform .2s ease;
+}
+
+.switcher:hover .switchIcon { transform: rotate(180deg); }
+
+.missav {
+  color: #f3e9ff;
+  border-color: rgba(213,163,255,.34);
+  background: linear-gradient(135deg, rgba(141,79,216,.22), rgba(255,255,255,.06));
+  backdrop-filter: blur(14px);
+}
+
+.missav .switchIcon {
+  color: #1a1022;
+  background: linear-gradient(135deg, #f4e9ff, #cf9eff);
+  box-shadow: 0 5px 16px rgba(185,117,255,.28);
+}
+
+.missav .target { color: #fff; }
+.missav .dot { color: #d5a3ff; background: #d5a3ff; }
+
+.avdb {
+  color: #5a4020;
+  border-color: rgba(148,91,17,.28);
+  background: linear-gradient(135deg, rgba(255,252,244,.86), rgba(230,201,150,.48));
+  box-shadow: 0 10px 26px rgba(97,64,24,.1);
+}
+
+.avdb .switchIcon {
+  color: #fff8ec;
+  background: linear-gradient(135deg, #b87318, #8f5200);
+  box-shadow: 0 5px 14px rgba(143,82,0,.2);
+}
+
+.avdb .target { color: #241b10; }
+.avdb .dot { color: #a65e00; background: #a65e00; }
+
+@media (max-width: 760px) {
+  .switcher {
+    grid-template-columns: 28px auto;
+    min-height: 36px;
+    gap: 6px;
+    padding: 4px 9px 4px 4px;
+    font-size: 9px;
+  }
+
+  .current { display: none; }
+  .switchIcon { width: 28px; height: 28px; }
+}
