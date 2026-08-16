@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import SourceSwitcher from "../source-switcher";
 import styles from "./hub.module.css";
 
 const links = [
@@ -25,7 +26,7 @@ export default function PublicHeader() {
       </nav>
       <div className={styles.headerActions}>
         <Link className={styles.headerSearch} href="/hub#search">ค้นหา</Link>
-        <Link className={styles.headerSearch} href="/">เปลี่ยนแหล่ง</Link>
+        <SourceSwitcher current="missav" />
       </div>
     </header>;
 }
