@@ -42,14 +42,9 @@ function isUpload18LoginUrl(raw: string) {
   return /^\/login\/?$/i.test(upload18Path(raw));
 }
 
-function isUpload18LoginSaveUrl(raw: string) {
-  return /^\/login\/save\/?$/i.test(upload18Path(raw));
-}
-
 async function isUpload18LoginPage(page: Page) {
   if (!isUpload18Url(page.url())) return false;
   if (isUpload18LoginUrl(page.url())) return true;
-  if (isUpload18LoginSaveUrl(page.url())) return false;
   return page.evaluate(() => {
     const title = document.title.toLowerCase();
     const hasPassword = Boolean(document.querySelector('input[type="password"]'));
@@ -58,71 +53,55 @@ async function isUpload18LoginPage(page: Page) {
   }).catch(() => false);
 }
 
-function safeAuthMessage(value: unknown) {
-  return String(value ?? "")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 240);
-}
-
-async function readLoginSaveResult(page: Page): Promise<LoginSaveResult | null> {
-  if (!isUpload18LoginSaveUrl(page.url())) return null;
-  const text = await page.evaluate(() => document.body?.innerText || "").catch(() => "");
-  if (!text.trim()) return null;
-  try {
-    const payload = JSON.parse(text) as { code?: unknown; msg?: unknown; message?: unknown; success?: unknown };
-    const message = safeAuthMessage(payload.msg ?? payload.message ?? "");
-    const parsedCode = Number(payload.code);
-    const code = Number.isFinite(parsedCode) ? parsedCode : null;
-    const success = payload.success === true || code === 1 || /success|successful|welcome|logged\s*in/i.test(message);
-    return { success, message, code };
-  } catch {
-    return null;
-  }
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function submitLogin(page: Page, username: string, password: string) {
-  const navigation = page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => null);
-
-  const submitted = await page.evaluate(({ user, pass }) => {
+async function submitLogin(page: Page, username: string, password: string): Promise<LoginSaveResult | null> {
+  return page.evaluate(async ({ user, pass }) => {
     const passwordInput = document.querySelector('input[type="password"]') as HTMLInputElement | null;
     const usernameInput = (
       document.querySelector('input[name*=user i],input[name*=email i],input[type="text"],input:not([type])')
     ) as HTMLInputElement | null;
-    if (!passwordInput || !usernameInput) return false;
-
-    const setValue = (input: HTMLInputElement, value: string) => {
-      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
-      descriptor?.set?.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-
-    setValue(usernameInput, user);
-    setValue(passwordInput, pass);
+    if (!passwordInput || !usernameInput) return null;
 
     const form = passwordInput.form || usernameInput.form || document.querySelector("form");
-    if (form instanceof HTMLFormElement) {
-      if (typeof form.requestSubmit === "function") form.requestSubmit();
-      else form.submit();
-      return true;
+    if (!(form instanceof HTMLFormElement)) return null;
+
+    const data = new URLSearchParams();
+    for (const [key, value] of new FormData(form).entries()) data.set(key, String(value));
+    data.set(usernameInput.name || "name", user);
+    data.set(passwordInput.name || "pass", pass);
+
+    try {
+      const response = await fetch(form.action || "/login/save", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Accept: "application/json, text/plain, */*",
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        },
+        body: data.toString(),
+      });
+      const text = await response.text();
+      const payload = JSON.parse(text) as { code?: unknown; msg?: unknown; message?: unknown; success?: unknown };
+      const message = String(payload.msg ?? payload.message ?? "")
+        .replace(/[\r\n\t]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 240);
+      const parsedCode = Number(payload.code);
+      const code = Number.isFinite(parsedCode) ? parsedCode : null;
+      return {
+        success: response.ok && (payload.success === true || code === 1 || /success|successful|welcome|logged\s*in/i.test(message)),
+        message,
+        code,
+      };
+    } catch {
+      return null;
     }
-
-    const button = Array.from(document.querySelectorAll("button,input[type=submit]")).find((element) => {
-      const label = element instanceof HTMLInputElement ? element.value : element.textContent || "";
-      return /sign\s*in|login|log\s*in/i.test(label);
-    }) as HTMLElement | undefined;
-    button?.click();
-    return Boolean(button);
-  }, { user: username, pass: password }).catch(() => false);
-
-  if (!submitted) return null;
-  return navigation;
+  }, { user: username, pass: password }).catch(() => null);
 }
 
 export async function ensureUpload18Authenticated(page: Page, targetUrl: string): Promise<Upload18AuthResult> {
@@ -149,28 +128,16 @@ export async function ensureUpload18Authenticated(page: Page, targetUrl: string)
     return { handled: true, authenticated: false, reason: "credentials-missing" };
   }
 
-  const loginNavigation = await submitLogin(page, username, password);
-  const saveResult = await readLoginSaveResult(page);
-  if (saveResult && !saveResult.success) {
+  const saveResult = await submitLogin(page, username, password);
+  if (!saveResult || !saveResult.success) {
     upload18AuthValidatedUntil = 0;
-    console.warn(`[upload18-auth] login rejected code=${saveResult.code ?? "unknown"} msg=${saveResult.message || "(empty)"}`);
-    return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
+    console.warn(`[upload18-auth] login rejected code=${saveResult?.code ?? "unknown"} msg=${saveResult?.message || "(empty)"}`);
+    return { handled: true, authenticated: false, reason: "login-failed" };
   }
 
-  if (saveResult?.success) {
-    console.info(`[upload18-auth] login accepted code=${saveResult.code ?? "unknown"}`);
-  }
+  console.info(`[upload18-auth] login accepted code=${saveResult.code ?? "unknown"}`);
 
-  if (!saveResult) {
-    await sleep(AUTH_STABILITY_MS);
-    if (await isUpload18LoginPage(page)) {
-      upload18AuthValidatedUntil = 0;
-      console.warn("[upload18-auth] login failed without a readable /login/save JSON response");
-      return { handled: true, authenticated: false, reason: "login-failed", pageStatus: loginNavigation?.status() };
-    }
-  }
-
-  let targetStatus = loginNavigation?.status();
+  let targetStatus: number | undefined;
   if (page.url() !== targetUrl) {
     const targetNavigation = await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
     targetStatus = targetNavigation?.status();
