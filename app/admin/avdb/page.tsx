@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./avdb-admin.module.css";
+import polish from "./admin-polish.module.css";
 
 type RunStatus = "queued" | "running" | "paused" | "completed" | "failed" | "cancelled";
 type StageStatus = "discovered" | "staged" | "duplicate" | "player_check" | "player_ready" | "published" | "error";
@@ -76,18 +77,18 @@ type AdminState = {
 };
 
 const pipeline = [
-  { key: "source", number: "01", title: "Source", note: "Crawler ใช้ scanner core เดียวกับ Source Lab" },
-  { key: "staging", number: "02", title: "Staging", note: "พบรายการแล้วเขียนเข้าจุดพักทันทีทีละหน้า" },
+  { key: "source", number: "01", title: "Source", note: "Crawler อ่าน AVDB API ทีละหน้าและ checkpoint ต่อเนื่อง" },
+  { key: "staging", number: "02", title: "Staging", note: "พบรายการแล้วเขียนเข้าจุดพักทันที พร้อมจัดหมวดอัตโนมัติ" },
   { key: "duplicate", number: "03", title: "Duplicate", note: "เทียบ external id + code/slug/title ก่อนสร้างรายการใหม่" },
-  { key: "player", number: "04", title: "Player", note: "เก็บ player page ไว้ก่อน รอต่อ verification รอบถัดไป" },
-  { key: "publish", number: "05", title: "Publish", note: "ยังล็อกจนกว่าจะผ่าน Player verification" },
+  { key: "player", number: "04", title: "Player Health", note: "ตรวจ Player แบบ serial เป็น health signal ไม่บังคับก่อน Publish" },
+  { key: "publish", number: "05", title: "Publish", note: "Publish metadata + source แล้วหน้า Watch resolve Player สดตอนกดเล่น" },
 ] as const;
 
 const tabDefs = [
   ["queue", "คิวทั้งหมด"],
   ["staging", "Staging"],
   ["duplicate", "รายการซ้ำ"],
-  ["player", "รอตรวจ Player"],
+  ["player", "Player Health"],
   ["published", "Published"],
 ] as const;
 
@@ -96,8 +97,8 @@ type TabKey = (typeof tabDefs)[number][0];
 const fallbackLogs = [
   { id: -1, time: "SYSTEM", text: "AVDB Staging DB พร้อมใช้งาน", tone: "safe" },
   { id: -2, time: "SYSTEM", text: "Crawler Worker เชื่อมกับ scanner core แล้ว", tone: "safe" },
-  { id: -3, time: "SYSTEM", text: "Worker ทำทีละหน้า และใช้ concurrency 1-3 ตามค่าที่เลือก", tone: "info" },
-  { id: -4, time: "SYSTEM", text: "MISSAV isolation เปิดอยู่ — AVDB ไม่เขียนทับ catalog เดิม", tone: "safe" },
+  { id: -3, time: "SYSTEM", text: "Player session cache ตั้งไว้ 30 นาที; forceFresh ยังใช้เป็น fallback ได้", tone: "info" },
+  { id: -4, time: "SYSTEM", text: "MISSAV isolation เปิดอยู่ — AVDB ใช้ catalog แยก", tone: "safe" },
 ] as const;
 
 function runProgress(run: StageRun | null) {
@@ -117,6 +118,27 @@ function stageMatchesTab(item: StageItem, tab: TabKey) {
   if (tab === "duplicate") return item.stage_status === "duplicate";
   if (tab === "player") return ["player_check", "player_ready"].includes(item.stage_status);
   return item.stage_status === "published";
+}
+
+function InitialSkeleton() {
+  return (
+    <main className={polish.skeletonPage} aria-label="กำลังโหลด AVDB Admin">
+      <div className={polish.skeletonShell}>
+        <div className={polish.skeletonBar} />
+        <div className={polish.skeletonHero} />
+        <div className={polish.skeletonStats}>
+          {Array.from({ length: 6 }, (_, index) => <div className={polish.skeletonTile} key={index} />)}
+        </div>
+        <div className={polish.skeletonWork}>
+          <div className={polish.skeletonPanel} />
+          <div className={polish.skeletonSide}>
+            <div className={polish.skeletonPanel} />
+            <div className={polish.skeletonPanel} />
+          </div>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 export default function AvdbAdminPage() {
@@ -234,17 +256,19 @@ export default function AvdbAdminPage() {
     if (key === "source") return state?.crawlerConnected ? { state: "READY", tone: "ready" } : { state: "OFFLINE", tone: "waiting" };
     if (key === "staging") return { state: "READY", tone: "ready" };
     if (key === "duplicate") return state?.stats.duplicates ? { state: "ACTIVE", tone: "ready" } : { state: "READY", tone: "ready" };
-    if (key === "player") return state?.stats.playerReady ? { state: "ACTIVE", tone: "ready" } : { state: "WAITING", tone: "waiting" };
-    return state?.stats.published ? { state: "ACTIVE", tone: "ready" } : { state: "LOCKED", tone: "locked" };
+    if (key === "player") return state?.stats.playerReady ? { state: "ACTIVE", tone: "ready" } : { state: "READY", tone: "ready" };
+    return state?.stats.published ? { state: "ACTIVE", tone: "ready" } : { state: "READY", tone: "ready" };
   };
 
+  if (loading && !state) return <InitialSkeleton />;
+
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${polish.pagePad}`}>
       <div className={styles.shell}>
         <header className={styles.topbar}>
           <div className={styles.brandGroup}>
             <Link className={styles.brand} href="/admin/avdb">AVDB<span>OPS</span></Link>
-            <span className={styles.modeBadge}><i /> CRAWLER READY</span>
+            <span className={styles.modeBadge}><i /> {state?.crawlerConnected ? "SYSTEM READY" : "SAFE MODE"}</span>
           </div>
           <nav className={styles.nav} aria-label="เมนู AVDBAPI Admin">
             <Link href="/admin">Control Rooms</Link>
@@ -258,9 +282,10 @@ export default function AvdbAdminPage() {
           <div>
             <p className={styles.eyebrow}>AVDBAPI / OPERATIONS CENTER</p>
             <h1>AVDB Control Room</h1>
-            <p>สร้าง Run แล้วแท็บ Admin นี้จะขับ Crawler ทีละหน้าอัตโนมัติ ผลที่พบถูกเขียนเข้า Staging ทันที พร้อม checkpoint, duplicate protection และ Pause/Resume โดยยังไม่ Publish</p>
+            <p>Crawler → Staging → Duplicate → Player Health → Publish แยกเป็นขั้นชัดเจน หน้าเว็บ Public จะ resolve Player สดตอนผู้ใช้กดเล่น และ Browser Session ที่พร้อมใช้จะถูก cache 30 นาทีเพื่อลดเวลารอและลดการเปิด Chromium ซ้ำ</p>
           </div>
           <div className={styles.commandActions}>
+            <button className={styles.secondaryButton} type="button" disabled={loading} onClick={() => void refresh()}>รีเฟรช</button>
             <Link className={styles.secondaryButton} href="/admin/avdb-import-test">เปิด Source Lab</Link>
             <button className={styles.pauseButton} type="button" disabled={!canPause || actionBusy} onClick={() => void controlRun("pause")}>Pause</button>
             {canResume ? (
@@ -274,12 +299,13 @@ export default function AvdbAdminPage() {
         {error ? <div className={styles.errorBanner}>{error}</div> : null}
         {notice ? <div className={styles.noticeBanner}>{notice}</div> : null}
 
-        <section className={styles.stats} aria-label="สถานะ AVDB">
-          <article><span>DISCOVERED</span><strong>{state?.stats.discovered ?? 0}</strong><small>{loading ? "กำลังอ่านข้อมูล" : "รายการที่พบทั้งหมด"}</small></article>
-          <article><span>STAGING</span><strong>{state?.stats.staging ?? 0}</strong><small>พร้อมตรวจขั้นถัดไป</small></article>
-          <article><span>PLAYER READY</span><strong>{state?.stats.playerReady ?? 0}</strong><small>รอต่อ verification</small></article>
-          <article><span>PUBLISHED</span><strong>{state?.stats.published ?? 0}</strong><small>Publish ยังล็อก</small></article>
-          <article className={styles.healthStat}><span>SYSTEM</span><strong>{state?.crawlerConnected ? "READY" : "SAFE"}</strong><small>{state?.crawlerConnected ? "crawler connected" : "crawler offline"}</small></article>
+        <section className={`${styles.stats} ${polish.statsSix}`} aria-label="สถานะ AVDB">
+          <article><span>DISCOVERED</span><strong>{state?.stats.discovered ?? 0}</strong><small>รายการที่พบทั้งหมด</small></article>
+          <article><span>STAGING</span><strong>{state?.stats.staging ?? 0}</strong><small>รอขั้นถัดไป</small></article>
+          <article><span>DUPLICATES</span><strong>{state?.stats.duplicates ?? 0}</strong><small>กันซ้ำอัตโนมัติ</small></article>
+          <article><span>PLAYER READY</span><strong>{state?.stats.playerReady ?? 0}</strong><small>Health check ผ่าน</small></article>
+          <article><span>PUBLISHED</span><strong>{state?.stats.published ?? 0}</strong><small>อยู่ Public Catalog</small></article>
+          <article className={`${styles.healthStat} ${polish.cacheStat}`}><span>PLAYER CACHE</span><strong>30 MIN</strong><small>fresh fallback ยังทำงาน</small></article>
         </section>
 
         <section className={styles.pipelineSection}>
@@ -378,9 +404,9 @@ export default function AvdbAdminPage() {
               <div className={styles.queueToolbar}>
                 <div><strong>{activeLabel}</strong><span>{filteredItems.length} รายการที่โหลดล่าสุด</span></div>
                 <div className={styles.queueActions}>
-                  <button type="button" disabled={!filteredItems.length}>เลือกทั้งหมด</button>
-                  <button type="button" disabled>ทดสอบ Player</button>
-                  <button type="button" disabled>Publish ที่เลือก</button>
+                  <span className={polish.queueHint}>Player Console อยู่ขวาล่าง</span>
+                  <span className={polish.queueHint}>Publish Console อยู่ซ้ายล่าง</span>
+                  <button className={polish.refreshButton} type="button" disabled={loading} onClick={() => void refresh()}>รีเฟรชคิว</button>
                 </div>
               </div>
 
@@ -393,7 +419,7 @@ export default function AvdbAdminPage() {
                       </div>
                       <div className={styles.itemBody}>
                         <div className={styles.itemTop}><b>{item.movie_code || item.external_id || "NO CODE"}</b><span>{item.stage_status}</span></div>
-                        <h3>{item.title || "ยังไม่มีชื่อ"}</h3>
+                        <h3 className={polish.cardTitle3} title={item.title}>{item.title || "ยังไม่มีชื่อ"}</h3>
                         <p>{[item.year, item.quality, item.duration, item.player_provider].filter(Boolean).join(" · ") || "รอ metadata"}</p>
                         <small>Source page {item.source_page ?? "—"} · Player {item.player_status}</small>
                       </div>
@@ -435,11 +461,11 @@ export default function AvdbAdminPage() {
             <article className={styles.sidePanel}>
               <div className={styles.panelHeadingCompact}><p>DATA RULES</p><span>ENFORCED</span></div>
               <ul className={styles.rules}>
-                <li><i>01</i><span><b>AVDB only</b>ตาราง Staging แยกจาก MISSAV</span></li>
+                <li><i>01</i><span><b>AVDB only</b>Staging และ Public Catalog แยกจาก MISSAV</span></li>
                 <li><i>02</i><span><b>Duplicate safe</b>external id + code/slug/title</span></li>
-                <li><i>03</i><span><b>Staging first</b>พบแล้วขึ้นการ์ดทันทีหลังจบหน้า</span></li>
-                <li><i>04</i><span><b>Failure safe</b>Retry ครบแล้ว Pause ที่หน้าเดิม</span></li>
-                <li><i>05</i><span><b>Checkpoint</b>Resume ต่อจากหน้าที่ยังค้าง</span></li>
+                <li><i>03</i><span><b>Auto category</b>ชื่อ/รหัส/คุณภาพ/เวลา จัดหมวดอัตโนมัติ</span></li>
+                <li><i>04</i><span><b>Live playback</b>resolve Player สดตอนผู้ใช้กดเล่น</span></li>
+                <li><i>05</i><span><b>30m cache</b>reuse session เดิมและ forceFresh เมื่อจำเป็น</span></li>
               </ul>
             </article>
 
@@ -465,8 +491,8 @@ export default function AvdbAdminPage() {
         </div>
 
         <footer className={styles.footerNote}>
-          <strong>CRAWLER + STAGING READY</strong>
-          <span>Run ทำงานแบบ 1 หน้า/1 server request เพื่อหลีกเลี่ยง Chromium ซ้อนกันบน Vercel ขณะ Run อยู่ควรเปิดหน้า Admin นี้ไว้; สามารถ Pause ปิดแท็บ แล้วกลับมา Resume จาก checkpoint ได้ โดย Player verification และ Publish ยังไม่เปิดในรอบนี้</span>
+          <strong>CRAWLER + STAGING + LIVE PLAYBACK READY</strong>
+          <span>Crawler ยังทำงานแบบ 1 หน้า/1 server request เพื่อไม่ให้ Chromium ซ้อนกัน Player Health เป็นเครื่องมือตรวจสุขภาพแยกจาก Publish และ Public Watch จะ resolve source สดพร้อม reuse Browser Session สูงสุด 30 นาที หาก session/source ใช้ไม่ได้ระบบยัง forceFresh แล้วลองใหม่ได้</span>
         </footer>
       </div>
     </main>
